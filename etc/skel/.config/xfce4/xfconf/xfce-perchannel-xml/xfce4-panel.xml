@@ -86,7 +86,7 @@
       <property name="digital-layout" type="uint" value="0"/>
       <property name="digital-date-format" type="string" value="%d/%m/%Y"/>
       <property name="digital-time-font" type="string" value="Sans Bold 12"/>
-      <property name="timezone" type="string" value="America/Porto_Velho"/>
+      <property name="timezone" type="string" value=""/>
     </property>
     <property name="plugin-13" type="string" value="separator">
       <property name="style" type="uint" value="0"/>
