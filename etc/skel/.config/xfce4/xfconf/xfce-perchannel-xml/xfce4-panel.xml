@@ -44,6 +44,7 @@
     <property name="plugin-6" type="string" value="systray">
       <property name="square-icons" type="bool" value="false"/>
       <property name="known-legacy-items" type="array">
+        <value type="string" value="octoxbps-notifier"/>
         <value type="string" value="xfce4-power-manager"/>
         <value type="string" value="ethernet network connection “wired connection 1” active"/>
         <value type="string" value="clipman"/>
@@ -113,7 +114,7 @@
       <property name="launcher-show-tooltip" type="bool" value="true"/>
       <property name="view-mode" type="int" value="1"/>
       <property name="launcher-show-description" type="bool" value="true"/>
-      <property name="button-icon" type="string" value="voidbr"/>
+      <property name="button-icon" type="string" value="voidbr-lightdm"/>
       <property name="button-single-row" type="bool" value="true"/>
       <property name="default-category" type="int" value="2"/>
       <property name="hover-switch-category" type="bool" value="true"/>
