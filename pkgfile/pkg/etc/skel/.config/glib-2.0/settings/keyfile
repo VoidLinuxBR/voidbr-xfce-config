@@ -1,0 +1,46 @@
+[org/gnome/desktop/sound]
+event-sounds=true
+input-feedback-sounds=true
+theme-name='default'
+
+[org/gnome/desktop/peripherals/mouse]
+double-click=400
+drag-threshold=8
+
+[org/gnome/desktop/wm/preferences]
+button-layout='icon,menu:minimize,maximize,close'
+action-middle-click-titlebar='lower'
+
+[org/gnome/desktop/interface]
+gtk-theme='Tokyonight-Dark-Theme'
+icon-theme='BeautyFolders'
+gtk-key-theme=''
+cursor-blink=true
+cursor-blink-time=1200
+cursor-size=0
+cursor-theme='capitaine-cursors-light'
+font-name='Cantarell 9'
+color-scheme='prefer-dark'
+
+[net/launchpad/plank/docks/dock1]
+dock-items=['desktop.dockitem', 'trash.dockitem', 'org.xfce.Parole-1.dockitem', 'org.xfce.mousepad.dockitem', 'thunar.dockitem', 'firefox-1.dockitem', 'xfce4-terminal.dockitem']
+position='top'
+theme='Default'
+zoom-enabled=true
+
+[org/gtk/settings/file-chooser]
+window-position=(23, 0)
+window-size=(990, 742)
+date-format='regular'
+location-mode='path-bar'
+show-hidden=false
+show-size-column=true
+show-type-column=true
+sidebar-width=164
+sort-column='name'
+sort-directories-first=false
+sort-order='ascending'
+type-format='category'
+
+[org/x/apps/portal]
+color-scheme='prefer-dark'
