@@ -114,7 +114,7 @@
       <property name="launcher-show-tooltip" type="bool" value="true"/>
       <property name="view-mode" type="int" value="1"/>
       <property name="launcher-show-description" type="bool" value="true"/>
-      <property name="button-icon" type="string" value="voidbr-lightdm"/>
+      <property name="button-icon" type="string" value="voidbr"/>
       <property name="button-single-row" type="bool" value="true"/>
       <property name="default-category" type="int" value="2"/>
       <property name="hover-switch-category" type="bool" value="true"/>
