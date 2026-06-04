@@ -12,15 +12,14 @@ button-layout='icon,menu:minimize,maximize,close'
 action-middle-click-titlebar='lower'
 
 [org/gnome/desktop/interface]
-gtk-theme='Tokyonight-Dark-Theme'
-icon-theme='BeautyFolders'
+gtk-theme='Dracula'
+icon-theme='dracula-icons-main'
 gtk-key-theme=''
 cursor-blink=true
 cursor-blink-time=1200
 cursor-size=0
 cursor-theme='capitaine-cursors-light'
 font-name='Cantarell 9'
-color-scheme='prefer-dark'
 
 [net/launchpad/plank/docks/dock1]
 dock-items=['desktop.dockitem', 'trash.dockitem', 'org.xfce.Parole-1.dockitem', 'org.xfce.mousepad.dockitem', 'thunar.dockitem', 'firefox-1.dockitem', 'xfce4-terminal.dockitem']
