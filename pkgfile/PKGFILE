@@ -24,7 +24,7 @@ package() {
 	fi
 
 	# Copiar a estrutura de /etc, /usr e /opt para /
-	local dirs=("usr" "etc" "opt")
+	local dirs=("usr" "etc" "opt" "var")
 	for dir in "${dirs[@]}"; do
 		if [ -d "${InternalDir}/${dir}" ]; then
 			cp -a "${InternalDir}/${dir}" "${pkgdir}/"
