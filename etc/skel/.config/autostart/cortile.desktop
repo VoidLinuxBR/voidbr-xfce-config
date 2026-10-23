@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Cortile
+Comment=Gerenciador de janelas em mosaico
+Exec=cortile
+Terminal=false
+X-GNOME-Autostart-enabled=true
+
+
