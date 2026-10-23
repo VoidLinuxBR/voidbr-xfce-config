@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Type=Application
+Name=VoidBR Boot Sound
+Comment=Som de inicialização do VoidBR
+Exec=aplay /usr/share/sounds/voidbr/start.wav
+OnlyShowIn=XFCE;
+StartupNotify=false
+Terminal=false
+Hidden=false
