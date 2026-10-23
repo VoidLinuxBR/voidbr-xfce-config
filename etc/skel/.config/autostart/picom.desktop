@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Picom
+Comment=Compositor com blur, sombras e cantos arredondados
+Exec=picom
+OnlyShowIn=XFCE;
+StartupNotify=false
+Terminal=false
+X-GNOME-Autostart-enabled=true

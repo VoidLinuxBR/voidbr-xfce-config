@@ -4,6 +4,8 @@ Name=Cortile
 Comment=Gerenciador de janelas em mosaico
 Exec=cortile
 Terminal=false
+OnlyShowIn=XFCE;
+StartupNotify=false
 X-GNOME-Autostart-enabled=true
 
 
