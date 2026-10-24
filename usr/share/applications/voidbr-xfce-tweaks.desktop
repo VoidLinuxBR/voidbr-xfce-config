@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=VoidBR XFCE Tweaks
+GenericName=Ajustes visuais
+Comment=Efeitos, transparências, mosaico e moldura das janelas
+Comment[pt_BR]=Efeitos, transparências, mosaico e moldura das janelas
+Exec=voidbr-xfce-tweaks
+Icon=preferences-desktop-theme
+Terminal=false
+Categories=Settings;DesktopSettings;GTK;X-XFCE-SettingsDialog;X-XFCE-PersonalSettings;X-VoidBR-Apps;
+Keywords=picom;blur;transparência;transparencia;cortile;tiling;mosaico;tema;xfwm4;compositor;
+StartupNotify=true
+StartupWMClass=voidbr-xfce-tweaks

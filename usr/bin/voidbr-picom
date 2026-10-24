@@ -6,13 +6,28 @@
 #
 # Baseado no desert-picom do DESERT OS Linux, que decide só por "é VM ou não".
 # Aqui a decisão é pela aceleração 3D, então uma VM com virgl também usa o picom.
-# Log da última execução: ~/.cache/voidbr-picom.log
+# Log da última execução (inclui a saída do picom): ~/.cache/voidbr-picom.log
+#
+# Modo (escolhido no voidbr-xfce-tweaks), em ~/.config/voidbr/compositor:
+#   auto   decide pela aceleração 3D (padrão)
+#   picom  sempre picom
+#   xfwm4  sempre o compositor do xfwm4
+#   nenhum sem compositor
 
 config="${XDG_CONFIG_HOME:-$HOME/.config}/picom/picom.conf"
+modo_file="${XDG_CONFIG_HOME:-$HOME/.config}/voidbr/compositor"
 log="${XDG_CACHE_HOME:-$HOME/.cache}/voidbr-picom.log"
 mkdir -p "${log%/*}"
 exec >"$log" 2>&1
 echo "voidbr-picom: $(date '+%d/%m/%Y %H:%M:%S')"
+
+modo=auto
+[[ -r $modo_file ]] && read -r modo <"$modo_file"
+case $modo in
+	auto | picom | xfwm4 | nenhum) ;;
+	*) modo=auto ;;
+esac
+echo "modo: $modo"
 
 is_vm() {
 	grep -qw hypervisor /proc/cpuinfo 2>/dev/null && return 0
@@ -55,15 +70,25 @@ has_accel() {
 	return 0
 }
 
+# xfwm4 reiniciado com --compositor=off não volta a compor só pelo xfconf
+restart_xfwm4_if_locked() {
+	if pgrep -u "$USER" -f 'xfwm4 .*--compositor=off' >/dev/null; then
+		echo "reiniciando o xfwm4 sem --compositor=off"
+		setsid xfwm4 --replace >/dev/null 2>&1 &
+		sleep 2
+	fi
+}
+
 use_xfwm4() {
 	echo "-> compositor do xfwm4"
+	restart_xfwm4_if_locked
 	xfconf-query -c xfwm4 -p /general/use_compositing -s true
 }
 
 start_picom() {
 	local args=()
 	[[ -f $config ]] && args=(--config "$config")
-	setsid picom "${args[@]}" >/dev/null 2>&1 &
+	setsid picom "${args[@]}" >>"$log" 2>&1 &
 	sleep 1
 	pgrep -u "$USER" -x picom >/dev/null
 }
@@ -71,13 +96,25 @@ start_picom() {
 pkill -u "$USER" -x picom
 sleep 0.2
 
+case $modo in
+	xfwm4)
+		use_xfwm4
+		exit 0
+		;;
+	nenhum)
+		echo "-> sem compositor"
+		xfconf-query -c xfwm4 -p /general/use_compositing -s false
+		exit 0
+		;;
+esac
+
 if ! command -v picom >/dev/null; then
 	echo "picom não instalado"
 	use_xfwm4
 	exit 0
 fi
 
-if ! has_accel; then
+if [[ $modo == auto ]] && ! has_accel; then
 	use_xfwm4
 	exit 0
 fi

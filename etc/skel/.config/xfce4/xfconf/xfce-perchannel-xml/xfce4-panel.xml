@@ -121,7 +121,6 @@
       <property name="view-mode" type="int" value="1"/>
       <property name="launcher-show-description" type="bool" value="true"/>
       <property name="button-icon" type="string" value="voidbr"/>
-      <property name="menu-opacity" type="int" value="80"/>
       <property name="button-single-row" type="bool" value="true"/>
       <property name="default-category" type="int" value="2"/>
       <property name="hover-switch-category" type="bool" value="true"/>
@@ -138,7 +137,7 @@
         <value type="string" value="chili-util-selector.desktop"/>
         <value type="string" value="firefox.desktop"/>
       </property>
-      <property name="menu-opacity" type="int" value="100"/>
+      <property name="menu-opacity" type="int" value="80"/>
       <property name="menu-width" type="int" value="370"/>
       <property name="menu-height" type="int" value="500"/>
       <property name="position-categories-horizontal" type="bool" value="false"/>

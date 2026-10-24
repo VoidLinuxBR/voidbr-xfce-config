@@ -1,0 +1,822 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+#   voidbr-xfce-tweaks
+#   Created: sáb 24 out 2026 12:40:00 -04
+#   Altered: sáb 24 out 2026 12:40:00 -04
+#
+#   Copyright (c) 2026, Vilmar Catafesta <vcatafesta@gmail.com>
+#   Copyright (c) 2026, ChiliLinux Development Team <https://chililinux.com> <https://github.com/chililinux>
+#   Assembled By Vilmar Catafesta for the VoidBR project.
+#   All rights reserved.
+#
+#   ChangeLog:
+#   - v1.0 (2026-10-24): Versão inicial — GTK4 + PyGObject. Ajustes visuais do
+#     VoidBR XFCE em abas: compositor e efeitos (picom), transparências
+#     (janelas, painel, menus, Whisker, terminal), mosaico (cortile) e tema
+#     da moldura (xfwm4). Botões Aplicar e Padrão VoidBR.
+#
+#   Redistribution and use in source and binary forms, with or without
+#   modification, are permitted provided that the following conditions
+#   are met:
+#   1. Redistributions of source code must retain the above copyright
+#      notice, this list of conditions and the following disclaimer.
+#   2. Redistributions in binary form must reproduce the above copyright
+#      notice, this list of conditions and the following disclaimer in the
+#      documentation and/or other materials provided with the distribution.
+#
+#   THIS SOFTWARE IS PROVIDED BY Vilmar Catafesta ''AS IS'' AND ANY EXPRESS OR
+#   IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+#   OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#   IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+#   INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+#   NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+#   THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+##############################################################################
+"""
+VoidBR XFCE Tweaks - ajustes visuais do VoidBR XFCE (picom, transparências,
+cortile e tema da moldura), sem editar arquivos na mão.
+
+Requer: PyGObject (GTK4), xfconf (xfconf-query), picom, cortile.
+    sudo xbps-install -S python3-gobject gtk4 xfconf picom cortile
+
+Arquivos que o app altera (sempre no usuário atual):
+    ~/.config/picom/picom.conf        cantos, blur, sombras, fade, opacidade
+    ~/.config/gtk-3.0/gtk.css         opacidade dos menus e dicas
+    ~/.config/cortile/config.toml     layout e espaço entre janelas
+    ~/.config/voidbr/compositor       modo do compositor (lido pelo voidbr-picom)
+    xfconf: xfce4-panel, xfce4-terminal, xfwm4
+"""
+
+import gi
+import os
+import re
+import subprocess
+import threading
+
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib, Gio
+
+VERSAO = "1.0"
+
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+PICOM_CONF = os.path.join(CONFIG, "picom", "picom.conf")
+GTK_CSS = os.path.join(CONFIG, "gtk-3.0", "gtk.css")
+CORTILE_CONF = os.path.join(CONFIG, "cortile", "config.toml")
+MODO_COMPOSITOR = os.path.join(CONFIG, "voidbr", "compositor")
+LOG_PICOM = os.path.join(CACHE, "voidbr-picom.log")
+
+INICIO_BLOCO = "# >>> voidbr-xfce-tweaks"
+FIM_BLOCO = "# <<< voidbr-xfce-tweaks"
+INICIO_CSS = "/* >>> voidbr-xfce-tweaks */"
+FIM_CSS = "/* <<< voidbr-xfce-tweaks */"
+
+MODOS = [
+    ("auto", "🤖 Automático (picom se houver aceleração 3D)"),
+    ("picom", "✨ Picom sempre (blur, cantos, sombras)"),
+    ("xfwm4", "🪟 Compositor do xfwm4 (leve, sem blur)"),
+    ("nenhum", "⛔ Nenhum compositor"),
+]
+
+LAYOUTS = [
+    ("vertical-right", "Mestre à direita"),
+    ("vertical-left", "Mestre à esquerda"),
+    ("horizontal-top", "Mestre em cima"),
+    ("horizontal-bottom", "Mestre embaixo"),
+    ("maximized", "Maximizado"),
+]
+
+# Valores do skel do VoidBR (botão "Padrão VoidBR")
+PADRAO = {
+    "modo": "auto",
+    "raio": 12,
+    "blur": 10,
+    "sombras": True,
+    "fade": True,
+    "janela_foco": 100,
+    "janela_fundo": 100,
+    "painel": 30,
+    "menus": 80,
+    "whisker": 80,
+    "terminal": 75,
+    "tiling": True,
+    "layout": "vertical-right",
+    "espaco": 10,
+    "tema": "Tokyonight-Dark",
+}
+
+# Apps que ficam sempre opacos quando a opacidade das janelas é reduzida
+REGRAS_OPACAS = [
+    "100:fullscreen",
+    "100:class_g = 'Xfce4-terminal'",
+    "100:class_g = 'firefox' || class_g = 'Firefox' || class_g = 'firefox-esr' || "
+    "class_g = 'Chromium' || class_g = 'Google-chrome' || class_g = 'Brave-browser'",
+    "100:class_g = 'mpv' || class_g = 'vlc' || class_g = 'Parole' || "
+    "class_g = 'Celluloid' || class_g = 'obs'",
+    "100:class_g = 'Gimp' || class_g = 'Inkscape' || class_g = 'krita' || class_g = 'Blender'",
+]
+
+CSS = """
+window {
+    background-color: #1e1f29;
+}
+
+label {
+    color: #f1f1f1;
+}
+
+.titulo-app {
+    font-size: 20px;
+    font-weight: 800;
+    color: #7dd3fc;
+}
+
+.subtitulo {
+    color: #a9b1d6;
+    font-size: 12px;
+}
+
+.rotulo-campo {
+    font-weight: bold;
+}
+
+.dica {
+    color: #8a8fa8;
+    font-size: 11px;
+}
+
+.botao-verde {
+    background: linear-gradient(180deg, #34d399, #059669);
+    color: white;
+    font-weight: bold;
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+.botao-verde:hover { background: #34d399; }
+
+.botao-laranja {
+    background: linear-gradient(180deg, #fbbf24, #d97706);
+    color: white;
+    font-weight: bold;
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+.botao-laranja:hover { background: #fbbf24; }
+
+.botao-cinza {
+    background: linear-gradient(180deg, #9ca3af, #6b7280);
+    color: white;
+    font-weight: bold;
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+.botao-cinza:hover { background: #9ca3af; }
+
+.caixa-status {
+    background-color: #2a2b3a;
+    border-radius: 10px;
+    padding: 8px;
+}
+
+.cabecalho-app {
+    background-color: #1a1b26;
+    color: #f1f1f1;
+}
+
+.botao-menu {
+    border-radius: 8px;
+}
+
+notebook > header {
+    background-color: #1a1b26;
+    border-radius: 10px;
+}
+notebook > header tab {
+    padding: 6px 12px;
+    color: #a9b1d6;
+}
+notebook > header tab:checked {
+    color: #7dd3fc;
+    font-weight: bold;
+}
+notebook > stack {
+    background-color: #1e1f29;
+}
+
+.valor-escala {
+    color: #7dd3fc;
+    font-weight: bold;
+}
+
+scale trough highlight {
+    background: linear-gradient(90deg, #34d399, #3b82f6);
+}
+"""
+
+
+# ---------------------------------------------------------------------------
+#   xfconf
+# ---------------------------------------------------------------------------
+
+def _xfconf(args):
+    """Roda xfconf-query em locale C (números sempre com ponto)."""
+    ambiente = dict(os.environ, LC_ALL="C")
+    try:
+        r = subprocess.run(["xfconf-query"] + args, capture_output=True,
+                           text=True, env=ambiente)
+    except FileNotFoundError:
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout
+
+
+def xfconf_ler(canal, prop):
+    saida = _xfconf(["-c", canal, "-p", prop])
+    return saida.strip() if saida is not None else None
+
+
+def xfconf_ler_lista(canal, prop):
+    """Lê uma propriedade do tipo array e devolve os itens como texto."""
+    saida = _xfconf(["-c", canal, "-p", prop])
+    if saida is None:
+        return []
+    itens = []
+    for linha in saida.splitlines()[1:]:
+        linha = linha.strip()
+        if linha:
+            itens.append(linha)
+    return itens
+
+
+def xfconf_gravar(canal, prop, tipo, valor):
+    _xfconf(["-c", canal, "-p", prop, "-n", "-t", tipo, "-s", str(valor)])
+
+
+def xfconf_gravar_rgba(canal, prop, valores):
+    args = ["-c", canal, "-p", prop, "-n"]
+    for _ in valores:
+        args += ["-t", "double"]
+    for v in valores:
+        args += ["-s", f"{v:.6f}"]
+    _xfconf(args)
+
+
+def ids_paineis():
+    return [i for i in xfconf_ler_lista("xfce4-panel", "/panels") if i.isdigit()]
+
+
+def ids_whisker():
+    saida = _xfconf(["-c", "xfce4-panel", "-lv"]) or ""
+    ids = []
+    for linha in saida.splitlines():
+        m = re.match(r"^/plugins/plugin-(\d+)\s+whiskermenu\s*$", linha)
+        if m:
+            ids.append(m.group(1))
+    return ids
+
+
+# ---------------------------------------------------------------------------
+#   arquivos
+# ---------------------------------------------------------------------------
+
+def ler_arquivo(caminho):
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def gravar_arquivo(caminho, texto):
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    temporario = caminho + ".tmp"
+    with open(temporario, "w", encoding="utf-8") as f:
+        f.write(texto)
+    os.replace(temporario, caminho)
+
+
+def remover_bloco(texto, inicio, fim):
+    padrao = re.compile(r"\n?" + re.escape(inicio) + r".*?" + re.escape(fim) + r"\n?", re.S)
+    return padrao.sub("\n", texto).rstrip("\n") + "\n"
+
+
+def trocar_linha(texto, chave, novo_valor):
+    """Troca 'chave = valor;' no topo do picom.conf (ou acrescenta no fim)."""
+    padrao = re.compile(r"^" + re.escape(chave) + r"\s*=\s*[^;]*;", re.M)
+    if padrao.search(texto):
+        return padrao.sub(f"{chave} = {novo_valor};", texto, count=1)
+    return texto.rstrip("\n") + f"\n{chave} = {novo_valor};\n"
+
+
+# ----- picom -----
+
+def ler_picom():
+    texto = ler_arquivo(PICOM_CONF)
+    v = {}
+    m = re.search(r"^corner-radius\s*=\s*(\d+)\s*;", texto, re.M)
+    v["raio"] = int(m.group(1)) if m else PADRAO["raio"]
+    m = re.search(r"^\s*strength\s*=\s*(\d+)\s*;", texto, re.M)
+    forca = int(m.group(1)) if m else PADRAO["blur"]
+    m = re.search(r"^\s*background\s*=\s*(true|false)\s*;", texto, re.M)
+    blur_ligado = (m.group(1) == "true") if m else True
+    v["blur"] = forca if blur_ligado else 0
+    m = re.search(r"^shadow\s*=\s*(true|false)\s*;", texto, re.M)
+    v["sombras"] = (m.group(1) == "true") if m else PADRAO["sombras"]
+    m = re.search(r"^fading\s*=\s*(true|false)\s*;", texto, re.M)
+    v["fade"] = (m.group(1) == "true") if m else PADRAO["fade"]
+    m = re.search(r'"(\d+):window_type = \'normal\' && focused"', texto)
+    v["janela_foco"] = int(m.group(1)) if m else 100
+    m = re.search(r'"(\d+):window_type = \'normal\' && !focused"', texto)
+    v["janela_fundo"] = int(m.group(1)) if m else 100
+    return v
+
+
+def gravar_picom(v):
+    texto = ler_arquivo(PICOM_CONF)
+    if not texto:
+        texto = ler_arquivo("/etc/skel/.config/picom/picom.conf")
+    texto = trocar_linha(texto, "corner-radius", int(v["raio"]))
+    texto = trocar_linha(texto, "shadow", "true" if v["sombras"] else "false")
+    texto = trocar_linha(texto, "fading", "true" if v["fade"] else "false")
+    if v["blur"] > 0:
+        texto = re.sub(r"^(\s*strength\s*=\s*)\d+(\s*;)", rf"\g<1>{int(v['blur'])}\g<2>",
+                       texto, count=1, flags=re.M)
+        texto = re.sub(r"^(\s*background\s*=\s*)(true|false)(\s*;)", r"\g<1>true\g<3>",
+                       texto, count=1, flags=re.M)
+    else:
+        texto = re.sub(r"^(\s*background\s*=\s*)(true|false)(\s*;)", r"\g<1>false\g<3>",
+                       texto, count=1, flags=re.M)
+
+    texto = remover_bloco(texto, INICIO_BLOCO, FIM_BLOCO)
+    foco, fundo = int(v["janela_foco"]), int(v["janela_fundo"])
+    if foco < 100 or fundo < 100:
+        regras = REGRAS_OPACAS + [
+            f"{foco}:window_type = 'normal' && focused",
+            f"{fundo}:window_type = 'normal' && !focused",
+            f"{foco}:window_type = 'dialog'",
+        ]
+        linhas = ",\n".join(f'  "{r}"' for r in regras)
+        texto += (f"\n{INICIO_BLOCO} (gerado pelo voidbr-xfce-tweaks)\n"
+                  f"opacity-rule = [\n{linhas}\n];\n{FIM_BLOCO}\n")
+    gravar_arquivo(PICOM_CONF, texto)
+
+
+# ----- gtk.css (menus) -----
+
+def ler_menus():
+    texto = ler_arquivo(GTK_CSS)
+    bloco = re.search(re.escape(INICIO_CSS) + r"(.*?)" + re.escape(FIM_CSS), texto, re.S)
+    alvo = bloco.group(1) if bloco else texto
+    m = re.search(r"menu[^{]*\{[^}]*rgba\(\s*26,\s*27,\s*38,\s*([0-9.]+)\s*\)", alvo)
+    return round(float(m.group(1)) * 100) if m else PADRAO["menus"]
+
+
+def gravar_menus(opacidade):
+    texto = remover_bloco(ler_arquivo(GTK_CSS), INICIO_CSS, FIM_CSS)
+    a = opacidade / 100.0
+    dica = min(1.0, a + 0.05)
+    texto += (f"\n{INICIO_CSS}\n"
+              f"menu, .menu, .context-menu {{ background-color: rgba(26, 27, 38, {a:.2f}); }}\n"
+              f"tooltip, tooltip.background {{ background-color: rgba(26, 27, 38, {dica:.2f}); }}\n"
+              f"#whiskermenu-window {{ background-color: #1a1b26; }}\n"
+              f"{FIM_CSS}\n")
+    gravar_arquivo(GTK_CSS, texto)
+
+
+# ----- cortile -----
+
+def ler_cortile():
+    texto = ler_arquivo(CORTILE_CONF)
+    m = re.search(r'^tiling_layout\s*=\s*"([^"]+)"', texto, re.M)
+    layout = m.group(1) if m else PADRAO["layout"]
+    m = re.search(r"^window_gap_size\s*=\s*(\d+)", texto, re.M)
+    espaco = int(m.group(1)) if m else PADRAO["espaco"]
+    return layout, espaco
+
+
+def gravar_cortile(layout, espaco):
+    texto = ler_arquivo(CORTILE_CONF)
+    if not texto:
+        texto = ler_arquivo("/etc/skel/.config/cortile/config.toml")
+    if not texto:
+        return
+    texto = re.sub(r'^tiling_layout\s*=\s*"[^"]*"', f'tiling_layout = "{layout}"',
+                   texto, count=1, flags=re.M)
+    texto = re.sub(r"^window_gap_size\s*=\s*\d+", f"window_gap_size = {int(espaco)}",
+                   texto, count=1, flags=re.M)
+    gravar_arquivo(CORTILE_CONF, texto)
+
+
+def tiling_ligado():
+    """Escolha salva do usuário: o autostart do cortile (Hidden=true = desligado).
+
+    Não usa o processo em execução, para que um cortile que caiu não faça o
+    Aplicar desligar o mosaico de vez.
+    """
+    texto = ler_arquivo(os.path.join(CONFIG, "autostart", "cortile.desktop"))
+    if not texto:
+        return False
+    m = re.search(r"^Hidden\s*=\s*(\S+)", texto, re.M)
+    return not (m and m.group(1).lower() == "true")
+
+
+# ----- modo do compositor -----
+
+def ler_modo():
+    modo = ler_arquivo(MODO_COMPOSITOR).strip()
+    return modo if modo in [m for m, _ in MODOS] else PADRAO["modo"]
+
+
+def gravar_modo(modo):
+    gravar_arquivo(MODO_COMPOSITOR, modo + "\n")
+
+
+# ----- temas do xfwm4 -----
+
+def listar_temas_xfwm4():
+    pastas = [
+        os.path.expanduser("~/.themes"),
+        os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "themes"),
+        "/usr/share/themes",
+    ]
+    temas = set()
+    for pasta in pastas:
+        try:
+            for nome in os.listdir(pasta):
+                if os.path.isfile(os.path.join(pasta, nome, "xfwm4", "themerc")):
+                    temas.add(nome)
+        except OSError:
+            pass
+    return sorted(temas, key=str.lower)
+
+
+# ---------------------------------------------------------------------------
+#   janela
+# ---------------------------------------------------------------------------
+
+class JanelaTweaks(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="voidbr-xfce-tweaks")
+        self.set_default_size(620, 560)
+
+        provider = Gtk.CssProvider()
+        provider.load_from_data(CSS.encode("utf-8"))
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        # --- Barra de título com menu (☰ Sobre / Créditos) ---
+        cabecalho = Gtk.HeaderBar()
+        cabecalho.add_css_class("cabecalho-app")
+        self.set_titlebar(cabecalho)
+
+        menu_modelo = Gio.Menu()
+        menu_modelo.append("ℹ️ Sobre / Créditos", "win.sobre")
+        botao_menu = Gtk.MenuButton()
+        botao_menu.set_icon_name("open-menu-symbolic")
+        botao_menu.set_menu_model(menu_modelo)
+        botao_menu.add_css_class("botao-menu")
+        cabecalho.pack_end(botao_menu)
+
+        acao_sobre = Gio.SimpleAction.new("sobre", None)
+        acao_sobre.connect("activate", self.ao_clicar_sobre)
+        self.add_action(acao_sobre)
+
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        caixa.set_margin_top(16)
+        caixa.set_margin_bottom(16)
+        caixa.set_margin_start(16)
+        caixa.set_margin_end(16)
+        self.set_child(caixa)
+
+        titulo = Gtk.Label(label="🎨 VoidBR XFCE Tweaks", xalign=0)
+        titulo.add_css_class("titulo-app")
+        caixa.append(titulo)
+        sub = Gtk.Label(label="Efeitos, transparências, mosaico e moldura das janelas", xalign=0)
+        sub.add_css_class("subtitulo")
+        caixa.append(sub)
+
+        abas = Gtk.Notebook()
+        abas.set_vexpand(True)
+        abas.append_page(self._aba_efeitos(), Gtk.Label(label="✨ Efeitos"))
+        abas.append_page(self._aba_transparencia(), Gtk.Label(label="💧 Transparência"))
+        abas.append_page(self._aba_mosaico(), Gtk.Label(label="🧩 Mosaico"))
+        abas.append_page(self._aba_moldura(), Gtk.Label(label="🪟 Moldura"))
+        caixa.append(abas)
+
+        # --- Status ---
+        caixa_status = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        caixa_status.add_css_class("caixa-status")
+        self.label_status = Gtk.Label(label="", xalign=0)
+        self.label_status.set_wrap(True)
+        caixa_status.append(self.label_status)
+        caixa.append(caixa_status)
+
+        # --- Botões ---
+        linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        linha.set_halign(Gtk.Align.END)
+        self.botao_padrao = Gtk.Button(label="↩️ Padrão VoidBR")
+        self.botao_padrao.add_css_class("botao-laranja")
+        self.botao_padrao.connect("clicked", self.ao_clicar_padrao)
+        self.botao_aplicar = Gtk.Button(label="✅ Aplicar")
+        self.botao_aplicar.add_css_class("botao-verde")
+        self.botao_aplicar.connect("clicked", self.ao_clicar_aplicar)
+        linha.append(self.botao_padrao)
+        linha.append(self.botao_aplicar)
+        caixa.append(linha)
+
+        self.carregar_valores()
+
+    # ----- construção das abas -----
+
+    def _grade(self):
+        grade = Gtk.Grid(column_spacing=14, row_spacing=12)
+        grade.set_margin_top(14)
+        grade.set_margin_bottom(14)
+        grade.set_margin_start(14)
+        grade.set_margin_end(14)
+        grade._linha = 0
+        return grade
+
+    def _rotulo(self, grade, texto, dica=None):
+        rot = Gtk.Label(label=texto, xalign=0)
+        rot.add_css_class("rotulo-campo")
+        grade.attach(rot, 0, grade._linha, 1, 1)
+        if dica:
+            d = Gtk.Label(label=dica, xalign=0)
+            d.add_css_class("dica")
+            d.set_wrap(True)
+            grade.attach(d, 0, grade._linha + 1, 3, 1)
+
+    def _escala(self, grade, texto, minimo, maximo, passo, sufixo="", dica=None):
+        self._rotulo(grade, texto, dica)
+        esc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, minimo, maximo, passo)
+        esc.set_hexpand(True)
+        esc.set_digits(0)
+        esc.set_draw_value(False)
+        valor = Gtk.Label(xalign=1)
+        valor.set_width_chars(6)
+        valor.add_css_class("valor-escala")
+        esc.connect("value-changed",
+                    lambda e: valor.set_text(f"{int(e.get_value())}{sufixo}"))
+        valor.set_text(f"{int(minimo)}{sufixo}")
+        grade.attach(esc, 1, grade._linha, 1, 1)
+        grade.attach(valor, 2, grade._linha, 1, 1)
+        grade._linha += 2 if dica else 1
+        return esc
+
+    def _chave(self, grade, texto, dica=None):
+        self._rotulo(grade, texto, dica)
+        sw = Gtk.Switch()
+        sw.set_halign(Gtk.Align.START)
+        grade.attach(sw, 1, grade._linha, 1, 1)
+        grade._linha += 2 if dica else 1
+        return sw
+
+    def _lista(self, grade, texto, opcoes, dica=None):
+        self._rotulo(grade, texto, dica)
+        dd = Gtk.DropDown.new_from_strings(opcoes)
+        dd.set_hexpand(True)
+        grade.attach(dd, 1, grade._linha, 1, 1)
+        grade._linha += 2 if dica else 1
+        return dd
+
+    def _aba_efeitos(self):
+        g = self._grade()
+        self.dd_modo = self._lista(g, "Compositor", [t for _, t in MODOS],
+                                   "Automático: usa o picom quando há aceleração 3D "
+                                   "(máquina real ou VM com virgl) e o xfwm4 quando não há.")
+        self.esc_blur = self._escala(g, "Desfoque (blur)", 0, 20, 1, "",
+                                     "0 desliga o desfoque.")
+        self.esc_raio = self._escala(g, "Cantos arredondados", 0, 30, 1, " px")
+        self.sw_sombras = self._chave(g, "Sombras")
+        self.sw_fade = self._chave(g, "Animação ao abrir/fechar")
+        return g
+
+    def _aba_transparencia(self):
+        g = self._grade()
+        self.esc_foco = self._escala(g, "Janela em foco", 50, 100, 1, " %",
+                                     "100 % = opaca. Navegadores, vídeo, GIMP/Inkscape, "
+                                     "terminal e tela cheia ficam sempre opacos.")
+        self.esc_fundo = self._escala(g, "Janelas de fundo", 50, 100, 1, " %")
+        self.esc_painel = self._escala(g, "Painel", 0, 100, 1, " %")
+        self.esc_menus = self._escala(g, "Menus e dicas", 30, 100, 1, " %",
+                                      "Vale para menus abertos depois de aplicar.")
+        self.esc_whisker = self._escala(g, "Menu Whisker", 30, 100, 1, " %")
+        self.esc_terminal = self._escala(g, "Terminal", 30, 100, 1, " %",
+                                         "O texto do terminal continua nítido.")
+        return g
+
+    def _aba_mosaico(self):
+        g = self._grade()
+        self.sw_tiling = self._chave(g, "Mosaico (cortile)",
+                                     "Liga agora e nos próximos logins.")
+        self.dd_layout = self._lista(g, "Layout inicial", [t for _, t in LAYOUTS],
+                                     "Vale para áreas de trabalho que ainda não foram usadas; "
+                                     "nas outras troque com Ctrl+Shift+setas.")
+        self.esc_espaco = self._escala(g, "Espaço entre janelas", 0, 40, 1, " px")
+        atalhos = Gtk.Label(xalign=0)
+        atalhos.add_css_class("dica")
+        atalhos.set_markup(
+            "<b>Atalhos do cortile</b>\n"
+            "Ctrl+Shift+T  liga/desliga   •   Ctrl+Shift+setas  muda o layout\n"
+            "Ctrl+Shift+PgUp/PgDn  alterna layouts   •   Ctrl+Shift+BackSpace  reinicia proporções"
+        )
+        g.attach(atalhos, 0, g._linha, 3, 1)
+        return g
+
+    def _aba_moldura(self):
+        g = self._grade()
+        self.temas = listar_temas_xfwm4()
+        self.dd_tema = self._lista(g, "Tema do xfwm4", self.temas or ["(nenhum tema encontrado)"],
+                                   "Moldura e barra de título das janelas. "
+                                   "Muda na hora, sem reiniciar a sessão.")
+        return g
+
+    # ----- carregar / aplicar -----
+
+    def _valores_atuais(self):
+        v = dict(PADRAO)
+        v["modo"] = ler_modo()
+        v.update(ler_picom())
+
+        paineis = ids_paineis()
+        if paineis:
+            rgba = xfconf_ler_lista("xfce4-panel", f"/panels/panel-{paineis[0]}/background-rgba")
+            estilo = xfconf_ler("xfce4-panel", f"/panels/panel-{paineis[0]}/background-style")
+            if estilo == "1" and len(rgba) == 4:
+                v["painel"] = round(float(rgba[3]) * 100)
+            else:
+                v["painel"] = 100
+        v["menus"] = ler_menus()
+        whisker = ids_whisker()
+        if whisker:
+            op = xfconf_ler("xfce4-panel", f"/plugins/plugin-{whisker[0]}/menu-opacity")
+            v["whisker"] = int(op) if op and op.isdigit() else 100
+        modo_term = xfconf_ler("xfce4-terminal", "/background-mode")
+        escuro = xfconf_ler("xfce4-terminal", "/background-darkness")
+        if modo_term == "TERMINAL_BACKGROUND_TRANSPARENT" and escuro:
+            v["terminal"] = round(float(escuro) * 100)
+        else:
+            v["terminal"] = 100
+
+        v["tiling"] = tiling_ligado()
+        v["layout"], v["espaco"] = ler_cortile()
+        v["tema"] = xfconf_ler("xfwm4", "/general/theme") or PADRAO["tema"]
+        return v
+
+    def _mostrar(self, v):
+        self.dd_modo.set_selected([m for m, _ in MODOS].index(v["modo"]))
+        self.esc_blur.set_value(v["blur"])
+        self.esc_raio.set_value(v["raio"])
+        self.sw_sombras.set_active(v["sombras"])
+        self.sw_fade.set_active(v["fade"])
+        self.esc_foco.set_value(v["janela_foco"])
+        self.esc_fundo.set_value(v["janela_fundo"])
+        self.esc_painel.set_value(v["painel"])
+        self.esc_menus.set_value(v["menus"])
+        self.esc_whisker.set_value(v["whisker"])
+        self.esc_terminal.set_value(v["terminal"])
+        self.sw_tiling.set_active(v["tiling"])
+        chaves = [chave for chave, _ in LAYOUTS]
+        self.dd_layout.set_selected(chaves.index(v["layout"]) if v["layout"] in chaves else 0)
+        self.esc_espaco.set_value(v["espaco"])
+        if v["tema"] in self.temas:
+            self.dd_tema.set_selected(self.temas.index(v["tema"]))
+
+    def _coletar(self):
+        return {
+            "modo": MODOS[self.dd_modo.get_selected()][0],
+            "blur": int(self.esc_blur.get_value()),
+            "raio": int(self.esc_raio.get_value()),
+            "sombras": self.sw_sombras.get_active(),
+            "fade": self.sw_fade.get_active(),
+            "janela_foco": int(self.esc_foco.get_value()),
+            "janela_fundo": int(self.esc_fundo.get_value()),
+            "painel": int(self.esc_painel.get_value()),
+            "menus": int(self.esc_menus.get_value()),
+            "whisker": int(self.esc_whisker.get_value()),
+            "terminal": int(self.esc_terminal.get_value()),
+            "tiling": self.sw_tiling.get_active(),
+            "layout": LAYOUTS[self.dd_layout.get_selected()][0],
+            "espaco": int(self.esc_espaco.get_value()),
+            "tema": self.temas[self.dd_tema.get_selected()] if self.temas else "",
+        }
+
+    def carregar_valores(self):
+        self._mostrar(self._valores_atuais())
+        self.label_status.set_text(self._resumo_compositor())
+
+    def _resumo_compositor(self):
+        log = ler_arquivo(LOG_PICOM).strip().splitlines()
+        decisao = next((linha for linha in reversed(log) if linha.startswith("->")), "")
+        rodando = subprocess.run(["pgrep", "-x", "picom"], capture_output=True).returncode == 0
+        partes = ["✨ picom rodando" if rodando else "🪟 picom parado"]
+        if decisao:
+            partes.append(f"última decisão do voidbr-picom: {decisao[2:].strip()}")
+        return "   •   ".join(partes)
+
+    def ao_clicar_padrao(self, botao):
+        self._mostrar(PADRAO)
+        self.label_status.set_text("↩️ Valores padrão do VoidBR carregados. Clique em ✅ Aplicar.")
+
+    def ao_clicar_aplicar(self, botao):
+        v = self._coletar()
+        self.botao_aplicar.set_sensitive(False)
+        self.botao_padrao.set_sensitive(False)
+        self.label_status.set_text("⏳ Aplicando…")
+        threading.Thread(target=self._aplicar, args=(v,), daemon=True).start()
+
+    def _aplicar(self, v):
+        erros = []
+        try:
+            gravar_modo(v["modo"])
+            gravar_picom(v)
+        except OSError as e:
+            erros.append(f"picom: {e}")
+
+        try:
+            for pid in ids_paineis():
+                base = f"/panels/panel-{pid}"
+                rgba = xfconf_ler_lista("xfce4-panel", f"{base}/background-rgba")
+                try:
+                    cor = [float(x) for x in rgba[:3]] if len(rgba) == 4 else [0.0, 0.0, 0.0]
+                except ValueError:
+                    cor = [0.0, 0.0, 0.0]
+                xfconf_gravar("xfce4-panel", f"{base}/background-style", "uint", 1)
+                xfconf_gravar_rgba("xfce4-panel", f"{base}/background-rgba",
+                                   cor + [v["painel"] / 100.0])
+            for pid in ids_whisker():
+                xfconf_gravar("xfce4-panel", f"/plugins/plugin-{pid}/menu-opacity",
+                              "int", v["whisker"])
+            xfconf_gravar("xfce4-terminal", "/background-mode", "string",
+                          "TERMINAL_BACKGROUND_TRANSPARENT")
+            xfconf_gravar("xfce4-terminal", "/background-darkness", "double",
+                          f"{v['terminal'] / 100.0:.2f}")
+            if v["tema"]:
+                xfconf_gravar("xfwm4", "/general/theme", "string", v["tema"])
+        except Exception as e:  # noqa: BLE001 - mostrar qualquer falha no status
+            erros.append(f"xfconf: {e}")
+
+        try:
+            gravar_menus(v["menus"])
+        except OSError as e:
+            erros.append(f"gtk.css: {e}")
+
+        try:
+            gravar_cortile(v["layout"], v["espaco"])
+            subprocess.run(["voidbr-tiling", "on" if v["tiling"] else "off"],
+                           capture_output=True)
+        except (OSError, FileNotFoundError) as e:
+            erros.append(f"cortile: {e}")
+
+        try:
+            subprocess.run(["voidbr-picom"], capture_output=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            erros.append(f"voidbr-picom: {e}")
+
+        GLib.idle_add(self._ao_concluir, erros)
+
+    def _ao_concluir(self, erros):
+        self.botao_aplicar.set_sensitive(True)
+        self.botao_padrao.set_sensitive(True)
+        if erros:
+            self.label_status.set_text("❌ " + " | ".join(erros))
+        else:
+            self.label_status.set_text("✅ Aplicado.   •   " + self._resumo_compositor())
+        return False
+
+    def ao_clicar_sobre(self, acao, parametro):
+        sobre = Gtk.AboutDialog()
+        sobre.set_transient_for(self)
+        sobre.set_modal(True)
+        sobre.set_program_name("VoidBR XFCE Tweaks")
+        sobre.set_version(VERSAO)
+        sobre.set_comments("Ajustes visuais do VoidBR XFCE:\n"
+                           "picom, transparências, cortile e tema da moldura.")
+        sobre.set_authors(["Vilmar Catafesta <vcatafesta@gmail.com>"])
+        sobre.set_copyright("© 2026 Vilmar Catafesta")
+        sobre.set_website("https://voidbr.org")
+        sobre.set_website_label("voidbr.org")
+        sobre.set_license_type(Gtk.License.BSD)
+        sobre.set_logo_icon_name("preferences-desktop-theme")
+        sobre.present()
+
+
+class AppTweaks(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id="org.voidbr.XfceTweaks",
+                         flags=getattr(Gio.ApplicationFlags, "DEFAULT_FLAGS", Gio.ApplicationFlags.FLAGS_NONE))
+
+    def do_activate(self):
+        janela = self.props.active_window or JanelaTweaks(self)
+        janela.present()
+
+
+if __name__ == "__main__":
+    AppTweaks().run(None)

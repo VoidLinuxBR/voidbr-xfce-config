@@ -67,6 +67,7 @@ window_ignore = [
     ["conky.*", ""],
     ["xfce4-settings-manager.*", ""],
     ["xfce4-taskmanager.*", ""],
+    ["voidbr-xfce-tweaks.*", ""],
 ]
 
 # Maximum number of allowed master windows (0 - 5).
