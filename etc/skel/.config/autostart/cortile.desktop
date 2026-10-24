@@ -1,11 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Cortile
-Comment=Gerenciador de janelas em mosaico
+Name=VoidBR Tiling
+Comment=Gerenciador de janelas em mosaico (ligue com: voidbr-tiling on)
 Exec=cortile
-Terminal=false
 OnlyShowIn=XFCE;
 StartupNotify=false
-X-GNOME-Autostart-enabled=true
-
-
+Terminal=false
+Hidden=true

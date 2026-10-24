@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# voidbr-tiling - liga/desliga o mosaico (cortile) na sessão XFCE do VoidBR
+#   voidbr-tiling on      liga agora e no próximo login
+#   voidbr-tiling off     desliga agora e no próximo login
+#   voidbr-tiling toggle  alterna
+#   voidbr-tiling status  mostra o estado
+#
+# Baseado no tiling-on/tiling-off do DESERT OS Linux.
+
+desktop="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/cortile.desktop"
+
+enable_autostart() {
+	mkdir -p "${desktop%/*}"
+	if [[ -f "$desktop" ]]; then
+		sed -i 's/^Hidden=.*/Hidden=false/' "$desktop"
+		grep -q '^Hidden=' "$desktop" || echo 'Hidden=false' >>"$desktop"
+	elif [[ -f /etc/skel/.config/autostart/cortile.desktop ]]; then
+		sed 's/^Hidden=.*/Hidden=false/' /etc/skel/.config/autostart/cortile.desktop >"$desktop"
+	fi
+}
+
+disable_autostart() {
+	[[ -f "$desktop" ]] && sed -i 's/^Hidden=.*/Hidden=true/' "$desktop"
+}
+
+tiling_on() {
+	enable_autostart
+	pgrep -x cortile >/dev/null || (cortile >/dev/null 2>&1 &)
+	echo "tiling: ligado"
+}
+
+tiling_off() {
+	disable_autostart
+	pkill -x cortile
+	echo "tiling: desligado"
+}
+
+case "${1:-toggle}" in
+	on)     tiling_on ;;
+	off)    tiling_off ;;
+	toggle) if pgrep -x cortile >/dev/null; then tiling_off; else tiling_on; fi ;;
+	status) pgrep -x cortile >/dev/null && echo "tiling: ligado" || echo "tiling: desligado" ;;
+	*)      echo "uso: ${0##*/} {on|off|toggle|status}" >&2; exit 1 ;;
+esac
+exit 0

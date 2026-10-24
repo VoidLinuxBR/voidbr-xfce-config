@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# voidbr-picom - escolhe o compositor da sessão XFCE do VoidBR
+#   VM            -> compositor do xfwm4 (picom costuma falhar sem aceleração 3D)
+#   máquina real  -> desliga o compositor do xfwm4 e sobe o picom
+#
+# Baseado no desert-picom do DESERT OS Linux.
+# O Void não tem systemd-detect-virt: a VM é detectada pela flag
+# "hypervisor" da CPU ou pelo fabricante no DMI.
+
+is_vm() {
+	grep -qw hypervisor /proc/cpuinfo 2>/dev/null && return 0
+	grep -qiE 'qemu|kvm|vmware|virtualbox|innotek|xen|bochs|parallels|microsoft corporation' \
+		/sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name 2>/dev/null
+}
+
+config="${XDG_CONFIG_HOME:-$HOME/.config}/picom/picom.conf"
+
+pkill -x picom
+sleep 0.2
+
+if is_vm || ! command -v picom >/dev/null; then
+	xfconf-query -c xfwm4 -p /general/use_compositing -s true
+else
+	xfconf-query -c xfwm4 -p /general/use_compositing -s false
+	sleep 0.2
+	if [[ -f "$config" ]]; then
+		picom -b --config "$config"
+	else
+		picom -b
+	fi
+fi
+exit 0
