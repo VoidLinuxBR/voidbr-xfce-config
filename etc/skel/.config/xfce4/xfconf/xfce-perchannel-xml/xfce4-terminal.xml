@@ -11,5 +11,5 @@
   <property name="scrolling-bar" type="string" value="TERMINAL_SCROLLBAR_NONE"/>
   <property name="misc-show-unsafe-paste-dialog" type="bool" value="false"/>
   <property name="background-mode" type="string" value="TERMINAL_BACKGROUND_TRANSPARENT"/>
-  <property name="background-darkness" type="double" value="0.850000"/>
+  <property name="background-darkness" type="double" value="0.600000"/>
 </channel>
