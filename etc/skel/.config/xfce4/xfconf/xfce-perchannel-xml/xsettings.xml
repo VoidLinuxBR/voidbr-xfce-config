@@ -33,7 +33,7 @@
     <property name="CursorThemeName" type="string" value="default"/>
     <property name="CursorThemeSize" type="empty"/>
     <property name="DecorationLayout" type="string" value="icon,menu:minimize,maximize,close"/>
-    <property name="DialogsUseHeader" type="bool" value="true"/>
+    <property name="DialogsUseHeader" type="bool" value="false"/>
     <property name="TitlebarMiddleClick" type="empty"/>
     <property name="ToolbarStyle" type="empty"/>
     <property name="ToolbarIconSize" type="empty"/>
