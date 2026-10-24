@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 #
 # voidbr-picom - escolhe o compositor da sessão XFCE do VoidBR
-#   VM            -> compositor do xfwm4 (picom costuma falhar sem aceleração 3D)
-#   máquina real  -> desliga o compositor do xfwm4 e sobe o picom
+#   com aceleração 3D (máquina real, VM com virgl) -> picom (blur, sombras, cantos)
+#   sem aceleração 3D (llvmpipe, VM sem 3D)        -> compositor do xfwm4
 #
-# Baseado no desert-picom do DESERT OS Linux.
-# O Void não tem systemd-detect-virt: a VM é detectada pela flag
-# "hypervisor" da CPU ou pelo fabricante no DMI.
+# Baseado no desert-picom do DESERT OS Linux, que decide só por "é VM ou não".
+# Aqui a decisão é pela aceleração 3D, então uma VM com virgl também usa o picom.
+# Log da última execução: ~/.cache/voidbr-picom.log
+
+config="${XDG_CONFIG_HOME:-$HOME/.config}/picom/picom.conf"
+log="${XDG_CACHE_HOME:-$HOME/.cache}/voidbr-picom.log"
+mkdir -p "${log%/*}"
+exec >"$log" 2>&1
+echo "voidbr-picom: $(date '+%d/%m/%Y %H:%M:%S')"
 
 is_vm() {
 	grep -qw hypervisor /proc/cpuinfo 2>/dev/null && return 0
@@ -14,20 +20,80 @@ is_vm() {
 		/sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name 2>/dev/null
 }
 
-config="${XDG_CONFIG_HOME:-$HOME/.config}/picom/picom.conf"
+# 0 = tem aceleração 3D, 1 = renderização por software
+has_accel() {
+	local info n xlog
 
-pkill -x picom
+	# 1) glxinfo (mesa-demos), se instalado
+	if command -v glxinfo >/dev/null; then
+		info=$(glxinfo -B 2>/dev/null)
+		if [[ -n $info ]]; then
+			echo "glxinfo: $(grep -m1 'renderer string' <<<"$info")"
+			grep -qiE 'renderer string: *(llvmpipe|softpipe|swrast)' <<<"$info" && return 1
+			return 0
+		fi
+	fi
+
+	# 2) log do Xorg: "glamor X acceleration enabled on <renderer>"
+	n=${DISPLAY#*:}
+	n=${n%%.*}
+	for xlog in "${XDG_DATA_HOME:-$HOME/.local/share}/xorg/Xorg.$n.log" "/var/log/Xorg.$n.log"; do
+		[[ -r $xlog ]] || continue
+		info=$(grep -m1 'glamor X acceleration enabled on' "$xlog")
+		[[ -n $info ]] || continue
+		echo "Xorg: ${info#*enabled on }"
+		grep -qiE 'llvmpipe|softpipe|swrast' <<<"$info" && return 1
+		return 0
+	done
+
+	# 3) sem como saber: VM conta como sem 3D, máquina real como com 3D
+	if is_vm; then
+		echo "sem informação de renderer; VM detectada"
+		return 1
+	fi
+	echo "sem informação de renderer; máquina real"
+	return 0
+}
+
+use_xfwm4() {
+	echo "-> compositor do xfwm4"
+	xfconf-query -c xfwm4 -p /general/use_compositing -s true
+}
+
+start_picom() {
+	local args=()
+	[[ -f $config ]] && args=(--config "$config")
+	setsid picom "${args[@]}" >/dev/null 2>&1 &
+	sleep 1
+	pgrep -u "$USER" -x picom >/dev/null
+}
+
+pkill -u "$USER" -x picom
 sleep 0.2
 
-if is_vm || ! command -v picom >/dev/null; then
-	xfconf-query -c xfwm4 -p /general/use_compositing -s true
-else
-	xfconf-query -c xfwm4 -p /general/use_compositing -s false
-	sleep 0.2
-	if [[ -f "$config" ]]; then
-		picom -b --config "$config"
-	else
-		picom -b
-	fi
+if ! command -v picom >/dev/null; then
+	echo "picom não instalado"
+	use_xfwm4
+	exit 0
 fi
+
+if ! has_accel; then
+	use_xfwm4
+	exit 0
+fi
+
+echo "-> picom"
+xfconf-query -c xfwm4 -p /general/use_compositing -s false
+sleep 0.5
+start_picom && exit 0
+
+# o xfwm4 às vezes não larga o compositor só pelo xfconf:
+# reinicia ele sem compositor e tenta de novo
+echo "picom não subiu; reiniciando o xfwm4 sem compositor"
+setsid xfwm4 --replace --compositor=off >/dev/null 2>&1 &
+sleep 2
+start_picom && exit 0
+
+echo "picom falhou de novo; voltando para o compositor do xfwm4"
+use_xfwm4
 exit 0
