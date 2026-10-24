@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=VoidBR Tiling
-Comment=Gerenciador de janelas em mosaico (ligue com: voidbr-tiling on)
+Comment=Gerenciador de janelas em mosaico (desligue com: voidbr-tiling off)
 Exec=cortile
 OnlyShowIn=XFCE;
 StartupNotify=false
 Terminal=false
-Hidden=true
+Hidden=false
