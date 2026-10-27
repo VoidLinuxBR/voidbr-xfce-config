@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#
+# voidbr-polkit - inicia o agente de autenticação do polkit na sessão XFCE do VoidBR
+#   só se nenhum outro agente estiver rodando para o usuário.
+#
+# O xfce-polkit mostra a janela de erro "XFCE PolicyKit Agent" quando outro
+# agente (polkit-gnome, mate-polkit, lxqt, kde...) já se registrou na sessão.
+# Por isso o autostart original (xfce-polkit.desktop) é desativado no skel
+# e este script decide se ele deve subir.
+# Log da última execução: ~/.cache/voidbr-polkit.log
+
+log="${XDG_CACHE_HOME:-$HOME/.cache}/voidbr-polkit.log"
+mkdir -p "${log%/*}"
+exec >"$log" 2>&1
+echo "voidbr-polkit: $(date '+%d/%m/%Y %H:%M:%S')"
+
+# Agentes conhecidos (nome do processo)
+agentes=(
+	xfce-polkit
+	polkit-gnome-authentication-agent-1
+	polkit-mate-authentication-agent-1
+	polkit-kde-authentication-agent-1
+	lxqt-policykit-agent
+	lxpolkit
+	hyprpolkitagent
+	polkit-efl-authentication-agent-1
+)
+
+# Compara só o executável (argv[0]) de cada processo do usuário,
+# para não confundir com um editor ou terminal que cite o nome.
+agente_rodando() {
+	local args exe a
+	while read -r args; do
+		exe=${args%% *}
+		exe=${exe##*/}
+		for a in "${agentes[@]}"; do
+			if [[ $exe == "$a" ]]; then
+				echo "agente encontrado: $args"
+				return 0
+			fi
+		done
+	done < <(ps -u "$UID" -o args=)
+	return 1
+}
+
+# Executável do xfce-polkit: lido do autostart do pacote, com alternativas
+xfce_polkit_bin() {
+	local exe
+	exe=$(sed -n 's/^Exec=//p' /etc/xdg/autostart/xfce-polkit.desktop 2>/dev/null | head -n1)
+	exe=${exe%% *}
+	for exe in "$exe" /usr/libexec/xfce-polkit /usr/lib/xfce-polkit/xfce-polkit "$(command -v xfce-polkit)"; do
+		[[ -n $exe && -x $exe ]] && { echo "$exe"; return 0; }
+	done
+	return 1
+}
+
+# Dá tempo para os outros autostarts subirem
+sleep 3
+
+if agente_rodando; then
+	echo "nada a fazer"
+	exit 0
+fi
+
+if ! bin=$(xfce_polkit_bin); then
+	echo "xfce-polkit não encontrado; sessão sem agente de autenticação"
+	exit 1
+fi
+
+echo "nenhum agente rodando, iniciando $bin"
+exec "$bin"

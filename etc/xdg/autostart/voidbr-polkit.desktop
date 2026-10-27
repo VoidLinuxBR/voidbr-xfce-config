@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=VoidBR PolKit
+Comment=Inicia o agente de autenticação do polkit, se nenhum outro estiver rodando
+Exec=voidbr-polkit
+Icon=gtk-dialog-authentication
+OnlyShowIn=XFCE;
+NoDisplay=false

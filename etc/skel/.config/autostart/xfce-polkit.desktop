@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=XFCE PolKit
+Comment=Desativado: iniciado pelo voidbr-polkit somente se não houver outro agente
+Exec=/usr/libexec/xfce-polkit
+OnlyShowIn=XFCE;
+Hidden=true
