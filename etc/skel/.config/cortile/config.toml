@@ -10,7 +10,7 @@
 tiling_enabled = true
 
 # Initial tiling layout, will be cached afterwards ("vertical-left" | "vertical-right" | "horizontal-top" | "horizontal-bottom" | "maximized" | "fullscreen").
-tiling_layout = "vertical-right"
+tiling_layout = "vertical-left"
 
 # List of tiling layouts used for next/previous layout cycle ([] = default).
 tiling_cycle = [

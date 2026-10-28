@@ -139,8 +139,8 @@ MODOS = [
 ]
 
 LAYOUTS = [
+    ("vertical-left", "Mestre à esquerda (novas à direita, como no Hyprland)"),
     ("vertical-right", "Mestre à direita"),
-    ("vertical-left", "Mestre à esquerda"),
     ("horizontal-top", "Mestre em cima"),
     ("horizontal-bottom", "Mestre embaixo"),
     ("maximized", "Maximizado"),
@@ -160,7 +160,7 @@ PADRAO = {
     "whisker": 80,
     "terminal": 75,
     "tiling": True,
-    "layout": "vertical-right",
+    "layout": "vertical-left",
     "espaco": 10,
     "tema": "Tokyonight-Dark",
     "mac": False,
