@@ -20,6 +20,9 @@
 #     layout barra no topo + dock (docklike), com backup e volta ao visual
 #     anterior. Suporte ao XFCE em Wayland (labwc): cantos, sombras e moldura
 #     no rc.xml do labwc; picom, cortile e xfwm4 só no X11.
+#   - v1.2 (2026-10-27): Tamanho da fonte do app (A− / 100% / A+, Ctrl+ Ctrl- Ctrl0)
+#     e família da fonte (menu ☰ → Aparência), gravados em
+#     ~/.config/voidbr/xfce-tweaks.json; --reset-font volta ao padrão.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -55,6 +58,7 @@ Arquivos que o app altera (sempre no usuário atual):
     ~/.config/gtk-3.0/gtk.css         opacidade dos menus e dicas
     ~/.config/cortile/config.toml     layout e espaço entre janelas
     ~/.config/voidbr/compositor       modo do compositor (lido pelo voidbr-picom)
+    ~/.config/voidbr/xfce-tweaks.json fonte do próprio app (--reset-font zera)
     ~/.config/voidbr/mac.json         estado do Visual Mac e visual anterior
     ~/.config/voidbr/mac-backup/      painéis guardados pelo layout Mac
     ~/.config/gtk-4.0/                links do tema Mac para apps libadwaita
@@ -73,9 +77,10 @@ import time
 import xml.etree.ElementTree as ET
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GLib, Gio
+gi.require_version("Pango", "1.0")
+from gi.repository import Gtk, GLib, Gio, Pango
 
-VERSAO = "1.1"
+VERSAO = "1.2"
 
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
@@ -84,6 +89,9 @@ GTK_CSS = os.path.join(CONFIG, "gtk-3.0", "gtk.css")
 CORTILE_CONF = os.path.join(CONFIG, "cortile", "config.toml")
 MODO_COMPOSITOR = os.path.join(CONFIG, "voidbr", "compositor")
 LOG_PICOM = os.path.join(CACHE, "voidbr-picom.log")
+PREFS_APP = os.path.join(CONFIG, "voidbr", "xfce-tweaks.json")   # fonte do próprio app
+
+ESCALA_MIN, ESCALA_MAX = 0.7, 2.0     # tamanho da fonte do app: 70% a 200%
 
 # Visual Mac (temas do pacote voidbr-mac-themes)
 TEMAS_DIR = "/usr/share/themes"
@@ -247,6 +255,25 @@ label {
     color: #f1f1f1;
 }
 
+.botao-fonte {
+    font-weight: bold;
+    padding: 2px 10px;
+    min-height: 24px;
+    background: #3b3d52;
+    color: #f1f1f1;
+    border: 1px solid #4b4e66;
+}
+.botao-fonte label { color: #f1f1f1; }
+.botao-fonte:hover { background: #4b4e66; }
+.botao-fonte:disabled { background: #2a2b3a; }
+.botao-fonte:disabled label { color: #6b7280; }
+
+.cartao {
+    background-color: #2a2b3a;
+    border-radius: 10px;
+    padding: 10px;
+}
+
 .botao-menu {
     border-radius: 8px;
 }
@@ -276,6 +303,33 @@ scale trough highlight {
     background: linear-gradient(90deg, #34d399, #3b82f6);
 }
 """
+
+
+# ---------------------------------------------------------------------------
+#   preferências do app (fonte)
+# ---------------------------------------------------------------------------
+
+def _familia_segura(nome):
+    """Nome de fonte para o CSS (sem aspas/chaves que quebrem a regra)."""
+    return re.sub(r"[^\w .,+-]", "", str(nome or "")).strip()[:80]
+
+
+def ler_prefs_app():
+    try:
+        with open(PREFS_APP, encoding="utf-8") as f:
+            dados = json.load(f)
+        return dados if isinstance(dados, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def gravar_prefs_app(**valores):
+    dados = ler_prefs_app()
+    dados.update(valores)
+    os.makedirs(os.path.dirname(PREFS_APP), exist_ok=True)
+    with open(PREFS_APP, "w", encoding="utf-8") as f:
+        json.dump(dados, f, indent=2, ensure_ascii=False)
+        f.write("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -852,12 +906,35 @@ class JanelaTweaks(Gtk.ApplicationWindow):
             self.get_display(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-        # --- Barra de título com menu (☰ Sobre / Créditos) ---
+        # tamanho e família da fonte (A− / A+ / Ctrl+ Ctrl- Ctrl0), gravados em PREFS_APP
+        self.css_fonte = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(), self.css_fonte, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        prefs = ler_prefs_app()
+        try:
+            self.escala = min(ESCALA_MAX, max(ESCALA_MIN, float(prefs.get("font_scale", 1.0))))
+        except (TypeError, ValueError):
+            self.escala = 1.0
+        self.familia = _familia_segura(prefs.get("font_family", ""))
+
+        # --- Barra de título: fonte à esquerda, menu (☰) à direita ---
         cabecalho = Gtk.HeaderBar()
         cabecalho.add_css_class("cabecalho-app")
         self.set_titlebar(cabecalho)
 
+        fonte = Gtk.Box(spacing=0)
+        fonte.add_css_class("linked")
+        self.b_menor = Gtk.Button(label="A−", tooltip_text="Diminuir a fonte (Ctrl -)")
+        self.b_escala = Gtk.Button(label="100%", tooltip_text="Tamanho normal (Ctrl 0)")
+        self.b_maior = Gtk.Button(label="A+", tooltip_text="Aumentar a fonte (Ctrl +)")
+        for b, passo in ((self.b_menor, -1), (self.b_escala, 0), (self.b_maior, 1)):
+            b.add_css_class("botao-fonte")
+            b.connect("clicked", lambda _b, p=passo: self.mudar_fonte(p))
+            fonte.append(b)
+        cabecalho.pack_start(fonte)
+
         menu_modelo = Gio.Menu()
+        menu_modelo.append("🔤 Aparência (fonte)…", "win.aparencia")
         menu_modelo.append("ℹ️ Sobre / Créditos", "win.sobre")
         botao_menu = Gtk.MenuButton()
         botao_menu.set_icon_name("open-menu-symbolic")
@@ -868,6 +945,18 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         acao_sobre = Gio.SimpleAction.new("sobre", None)
         acao_sobre.connect("activate", self.ao_clicar_sobre)
         self.add_action(acao_sobre)
+        for nome, cb in (("aparencia", self.ao_clicar_aparencia),
+                         ("fonte_mais", lambda *_: self.mudar_fonte(1)),
+                         ("fonte_menos", lambda *_: self.mudar_fonte(-1)),
+                         ("fonte_normal", lambda *_: self.mudar_fonte(0))):
+            acao = Gio.SimpleAction.new(nome, None)
+            acao.connect("activate", cb)
+            self.add_action(acao)
+        app.set_accels_for_action("win.fonte_mais", ["<Control>plus", "<Control>equal",
+                                                     "<Control>KP_Add"])
+        app.set_accels_for_action("win.fonte_menos", ["<Control>minus", "<Control>KP_Subtract"])
+        app.set_accels_for_action("win.fonte_normal", ["<Control>0", "<Control>KP_0"])
+        self.aplicar_fonte()
 
         caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         caixa.set_margin_top(16)
@@ -1257,6 +1346,130 @@ class JanelaTweaks(Gtk.ApplicationWindow):
             self.label_status.set_text("✅ Aplicado.   •   " + self._resumo_compositor())
         return False
 
+    # ----- fonte do app -----
+
+    def aplicar_fonte(self):
+        """Aplica a escala e a família da fonte em todas as janelas do app."""
+        nome = Gtk.Settings.get_default().props.gtk_font_name or ""
+        m = re.search(r"(\d+(?:\.\d+)?)\s*$", nome)
+        base = float(m.group(1)) if m else 11.0
+        s = self.escala
+        fam = f' font-family: "{self.familia}";' if self.familia else ""
+        sistema = _familia_segura(re.sub(r"[ ,]*[0-9.]+$", "", nome)) or "sans-serif"
+        self.css_fonte.load_from_data((
+            f"window, window * {{ font-size: {base * s:.1f}pt;{fam} }}\n"
+            f".titulo-app {{ font-size: {20 * s:.0f}px; }}\n"
+            f".subtitulo {{ font-size: {12 * s:.0f}px; }}\n"
+            f".dica {{ font-size: {11 * s:.0f}px; }}\n"
+            # a janela Aparência fica sempre na fonte do sistema (para dar para desfazer)
+            f"window.aparencia, window.aparencia * {{ font-family: \"{sistema}\"; "
+            f"font-size: {base:.1f}pt; }}\n"
+            "window.aparencia .titulo-app { font-size: 20px; }\n").encode("utf-8"))
+        # força o GTK a remedir e redesenhar todas as janelas com a fonte nova
+        for w in Gtk.Window.list_toplevels():
+            w.queue_resize()
+            w.queue_draw()
+        self.b_escala.set_label(f"{round(s * 100)}%")
+        self.b_menor.set_sensitive(s > ESCALA_MIN + 0.001)
+        self.b_maior.set_sensitive(s < ESCALA_MAX - 0.001)
+
+    def mudar_fonte(self, passo):
+        """passo: +1 aumenta, -1 diminui, 0 volta ao normal. Fica gravado."""
+        nova = 1.0 if passo == 0 else round(self.escala + 0.1 * passo, 2)
+        nova = min(ESCALA_MAX, max(ESCALA_MIN, nova))
+        if nova == self.escala and passo:
+            return
+        self.escala = nova
+        self.aplicar_fonte()
+        try:
+            gravar_prefs_app(font_scale=nova)
+        except OSError:
+            pass
+
+    def ao_clicar_aparencia(self, *_):
+        """Escolhe a família da fonte do app (o tamanho fica no A− / A+).
+
+        A escolha só aparece na frase de exemplo; o app muda quando você salva."""
+        sistema = Gtk.Settings.get_default().props.gtk_font_name or "Sans 11"
+        familias = sorted({f.get_name() for f in self.get_pango_context().list_families()},
+                          key=str.lower)
+        opcoes = ["Padrão do sistema"] + familias
+        escolha = [self.familia]
+
+        dlg = Gtk.Window(title="Aparência", transient_for=self, modal=True,
+                         default_width=520, resizable=False)
+        dlg.add_css_class("aparencia")
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for lado in ("top", "bottom", "start", "end"):
+            getattr(caixa, f"set_margin_{lado}")(18)
+        titulo = Gtk.Label(label="🔤 Aparência", xalign=0)
+        titulo.add_css_class("titulo-app")
+        caixa.append(titulo)
+        texto = Gtk.Label(label="Fonte do VoidBR XFCE Tweaks (o tamanho continua nos botões "
+                                "A− / A+). Escolha olhando o exemplo e clique em Salvar.",
+                          xalign=0, wrap=True)
+        texto.add_css_class("dica")
+        caixa.append(texto)
+
+        lista = Gtk.DropDown.new_from_strings(opcoes)
+        lista.set_enable_search(True)
+        lista.set_expression(Gtk.PropertyExpression.new(Gtk.StringObject, None, "string"))
+        lista.set_hexpand(True)
+        lista.set_selected(opcoes.index(self.familia) if self.familia in opcoes else 0)
+        linha = Gtk.Box(spacing=8)
+        linha.append(Gtk.Label(label="Fonte:", xalign=0))
+        linha.append(lista)
+        caixa.append(linha)
+
+        # exemplo com a fonte escolhida (só este rótulo muda)
+        previa = Gtk.Label(label="Efeitos, transparências, mosaico e Visual Mac.\n"
+                                 "0123456789  áéíóú çãõ  ABC abc", xalign=0, wrap=True,
+                           max_width_chars=56, height_request=56, hexpand=True)
+        previa.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        quadro = Gtk.Box()
+        quadro.add_css_class("cartao")
+        quadro.append(previa)
+        caixa.append(quadro)
+        info = Gtk.Label(xalign=0, wrap=True)
+        info.add_css_class("dica")
+        caixa.append(info)
+
+        def ao_mudar(*_):
+            i = lista.get_selected()
+            fam = "" if i in (0, Gtk.INVALID_LIST_POSITION) else _familia_segura(opcoes[i])
+            escolha[0] = fam
+            attrs = Pango.AttrList()
+            if fam:
+                attrs.insert(Pango.attr_family_new(fam))
+            previa.set_attributes(attrs)
+            info.set_markup(f"Em uso agora: <b>{GLib.markup_escape_text(self.familia or 'padrão do sistema')}</b>"
+                            + ("" if self.familia else f" ({GLib.markup_escape_text(sistema)})"))
+        lista.connect("notify::selected", ao_mudar)
+        ao_mudar()
+
+        def salvar(*_):
+            try:
+                gravar_prefs_app(font_family=escolha[0])
+            except OSError as e:
+                info.set_text(f"❌ Não foi possível salvar: {e}")
+                return
+            self.familia = escolha[0]
+            self.aplicar_fonte()
+            dlg.close()
+
+        botoes = Gtk.Box(spacing=8, homogeneous=True)
+        cancelar = Gtk.Button(label="❌ Cancelar")
+        cancelar.add_css_class("botao-cinza")
+        cancelar.connect("clicked", lambda *_: dlg.close())
+        gravar = Gtk.Button(label="💾 Salvar")
+        gravar.add_css_class("botao-verde")
+        gravar.connect("clicked", salvar)
+        botoes.append(cancelar)
+        botoes.append(gravar)
+        caixa.append(botoes)
+        dlg.set_child(caixa)
+        dlg.present()
+
     def ao_clicar_sobre(self, acao, parametro):
         sobre = Gtk.AboutDialog()
         sobre.set_transient_for(self)
@@ -1286,4 +1499,9 @@ class AppTweaks(Gtk.Application):
 
 
 if __name__ == "__main__":
+    import sys
+    if "--reset-font" in sys.argv[1:]:
+        # escape caso uma fonte deixe a janela ilegível
+        gravar_prefs_app(font_family="", font_scale=1.0)
+        print("voidbr-xfce-tweaks: fonte voltou ao padrão do sistema")
     AppTweaks().run(None)
