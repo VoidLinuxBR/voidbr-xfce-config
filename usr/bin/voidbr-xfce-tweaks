@@ -1000,8 +1000,9 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         self.sw_tiling = self._chave(g, "Mosaico (cortile)",
                                      "Liga agora e nos próximos logins.")
         self.dd_layout = self._lista(g, "Layout inicial", [t for _, t in LAYOUTS],
-                                     "Vale para áreas de trabalho que ainda não foram usadas; "
-                                     "nas outras troque com Ctrl+Shift+setas.")
+                                     "Ao trocar, todas as áreas de trabalho passam a usar o "
+                                     "novo layout. Maximizar uma janela (ou Ctrl+Shift+Espaço) "
+                                     "empilha a área toda; Ctrl+Shift+← volta ao lado a lado.")
         self.esc_espaco = self._escala(g, "Espaço entre janelas", 0, 40, 1, " px")
         atalhos = Gtk.Label(xalign=0)
         atalhos.add_css_class("dica")
@@ -1229,9 +1230,13 @@ class JanelaTweaks(Gtk.ApplicationWindow):
 
         if not wayland:
             try:
+                layout_antes = ler_cortile()[0]
                 gravar_cortile(v["layout"], v["espaco"])
                 subprocess.run(["voidbr-tiling", "on" if v["tiling"] else "off"],
                                capture_output=True)
+                if v["tiling"] and v["layout"] != layout_antes:
+                    # o cortile guarda o layout de cada área: esquece para valer o novo
+                    subprocess.run(["voidbr-tiling", "reset"], capture_output=True)
             except (OSError, FileNotFoundError) as e:
                 erros.append(f"cortile: {e}")
 

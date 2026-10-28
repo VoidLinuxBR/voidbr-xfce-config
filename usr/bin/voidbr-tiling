@@ -5,10 +5,22 @@
 #   voidbr-tiling off     desliga agora e no próximo login
 #   voidbr-tiling toggle  alterna
 #   voidbr-tiling status  mostra o estado
+#   voidbr-tiling reset   esquece os layouts guardados por área de trabalho
+#                         (volta todas ao layout inicial do config.toml)
 #
 # Baseado no tiling-on/tiling-off do DESERT OS Linux.
 
 desktop="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/cortile.desktop"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/cortile"
+
+# Com o mosaico ligado, o Thunar não reabre maximizado: o cortile trata uma janela
+# maximizada como pedido do layout "maximized" e empilha todas as janelas da área.
+thunar_geometria() {
+	command -v xfconf-query >/dev/null || return 0
+	xfconf-query -c thunar -p /misc-remember-geometry -n -t bool -s "$1" 2>/dev/null
+	[[ "$1" == false ]] && xfconf-query -c thunar -p /last-window-maximized -n -t bool -s false 2>/dev/null
+	return 0
+}
 
 enable_autostart() {
 	mkdir -p "${desktop%/*}"
@@ -26,6 +38,7 @@ disable_autostart() {
 
 tiling_on() {
 	enable_autostart
+	thunar_geometria false
 	pgrep -x cortile >/dev/null || (cortile >/dev/null 2>&1 &)
 	echo "tiling: ligado"
 }
@@ -33,7 +46,19 @@ tiling_on() {
 tiling_off() {
 	disable_autostart
 	pkill -x cortile
+	thunar_geometria true
 	echo "tiling: desligado"
+}
+
+tiling_reset() {
+	local rodando=false
+	pgrep -x cortile >/dev/null && rodando=true
+	pkill -x cortile
+	sleep 0.5
+	# cache do cortile: <versão>/workplaces/<telas>/{workspaces,clients}/*.json
+	rm -rf "$cache"/*/workplaces
+	$rodando && (cortile >/dev/null 2>&1 &)
+	echo "tiling: layouts das áreas de trabalho reiniciados"
 }
 
 case "${1:-toggle}" in
@@ -41,6 +66,7 @@ case "${1:-toggle}" in
 	off)    tiling_off ;;
 	toggle) if pgrep -x cortile >/dev/null; then tiling_off; else tiling_on; fi ;;
 	status) pgrep -x cortile >/dev/null && echo "tiling: ligado" || echo "tiling: desligado" ;;
-	*)      echo "uso: ${0##*/} {on|off|toggle|status}" >&2; exit 1 ;;
+	reset)  tiling_reset ;;
+	*)      echo "uso: ${0##*/} {on|off|toggle|status|reset}" >&2; exit 1 ;;
 esac
 exit 0
