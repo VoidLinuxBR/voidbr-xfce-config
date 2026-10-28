@@ -1,13 +1,13 @@
 /*
  * VoidBR XFCE - menus e dicas translúcidos
  * O picom desfoca o que está atrás (blur). As janelas continuam opacas.
- * Inspirado no tema DESERT-Dark do DESERT OS; cores Tokyo Night.
+ * Inspirado no tema DESERT-Dark do DESERT OS; cores do Visual Mac escuro (voidbr-mac-themes).
  */
 
 menu,
 .menu,
 .context-menu {
-	background-color: rgba(26, 27, 38, 0.80);
+	background-color: rgba(40, 40, 42, 0.80);
 	border: none;
 	border-radius: 12px;
 	padding: 6px;
@@ -20,12 +20,12 @@ menu menuitem,
 
 menu menuitem:hover,
 .menu menuitem:hover {
-	background-color: rgba(122, 162, 247, 0.35);
+	background-color: rgba(10, 132, 255, 0.35);
 }
 
 tooltip,
 tooltip.background {
-	background-color: rgba(26, 27, 38, 0.85);
+	background-color: rgba(40, 40, 42, 0.85);
 	border-radius: 8px;
 }
 
@@ -36,7 +36,7 @@ tooltip.background {
 /* Menu Whisker: o plugin aplica a opacidade (menu-opacity) só ao fundo da
    janela; as listas de dentro ficam transparentes para o efeito aparecer. */
 #whiskermenu-window {
-	background-color: #1a1b26;
+	background-color: #2a2a2c;
 }
 
 #whiskermenu-window treeview,
@@ -50,5 +50,5 @@ tooltip.background {
 #whiskermenu-window treeview:selected,
 #whiskermenu-window iconview:selected,
 #whiskermenu-window .view:selected {
-	background-color: rgba(122, 162, 247, 0.35);
+	background-color: rgba(10, 132, 255, 0.35);
 }

@@ -171,7 +171,7 @@ PADRAO = {
     "layout": "vertical-left",
     "espaco": 10,
     "tema": "Tokyonight-Dark",
-    "mac": False,
+    "mac": True,               # Visual Mac ligado de fábrica (escuro, barra no topo + dock)
     "mac_aparencia": "Dark",
     "mac_cor": "",
     "mac_layout": True,

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# voidbr-mac-sessao - acertos do Visual Mac no login (XFCE do VoidBR, X11 e Wayland)
+#   A pilha "Downloads" da dock (plugin directorymenu) precisa do caminho real da
+#   pasta, que o skel não conhece (muda com o idioma e o usuário). Preenche só se
+#   estiver vazio, para não desfazer o que a pessoa escolher depois.
+#
+#   Chamado por ~/.config/autostart/voidbr-mac-sessao.desktop.
+
+command -v xfconf-query >/dev/null || exit 0
+
+# espera o painel registrar os plugins no xfconf
+for _ in $(seq 20); do
+	xfconf-query -c xfce4-panel -p /plugins >/dev/null 2>&1 && break
+	sleep 0.5
+done
+
+downloads=$(xdg-user-dir DOWNLOAD 2>/dev/null)
+[[ -z "$downloads" || "$downloads" == "$HOME" ]] && downloads="$HOME/Downloads"
+
+xfconf-query -c xfce4-panel -lv 2>/dev/null |
+	awk '$2 == "directorymenu" { sub("^/plugins/", "", $1); print $1 }' |
+	while read -r plugin; do
+		atual=$(xfconf-query -c xfce4-panel -p "/plugins/$plugin/base-directory" 2>/dev/null)
+		[[ -n "$atual" ]] && continue
+		xfconf-query -c xfce4-panel -p "/plugins/$plugin/base-directory" -n -t string -s "$downloads"
+	done
+exit 0

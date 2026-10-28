@@ -1,0 +1,21 @@
+{
+  "ativo": true,
+  "aparencia": "Dark",
+  "cor": "",
+  "layout": true,
+  "layout_aplicado": true,
+  "anterior": {
+    "gtk": "Adapta-Nokto",
+    "xfwm4": "Tokyonight-Dark",
+    "botoes": "OST|HMC",
+    "gtk_gsettings": null,
+    "esquema": null,
+    "labwc": {
+      "nome": "Adwaita",
+      "raio": "8",
+      "sombras": null,
+      "botoes": null
+    },
+    "plank": false
+  }
+}

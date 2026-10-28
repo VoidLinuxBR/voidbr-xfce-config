@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=VoidBR Visual Mac
+Name[pt_BR]=VoidBR Visual Mac
+Comment=Login adjustments for the VoidBR Mac look
+Comment[pt_BR]=Acertos do Visual Mac no login (pasta Downloads da dock)
+Exec=voidbr-mac-sessao
+OnlyShowIn=XFCE;
+StartupNotify=false
+Terminal=false
+Hidden=false
