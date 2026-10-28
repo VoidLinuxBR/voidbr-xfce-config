@@ -3,7 +3,7 @@
 #
 #   voidbr-xfce-tweaks
 #   Created: sáb 24 out 2026 12:40:00 -04
-#   Altered: sáb 24 out 2026 12:40:00 -04
+#   Altered: ter 27 out 2026 23:10:00 -04
 #
 #   Copyright (c) 2026, Vilmar Catafesta <vcatafesta@gmail.com>
 #   Copyright (c) 2026, ChiliLinux Development Team <https://chililinux.com> <https://github.com/chililinux>
@@ -15,6 +15,11 @@
 #     VoidBR XFCE em abas: compositor e efeitos (picom), transparências
 #     (janelas, painel, menus, Whisker, terminal), mosaico (cortile) e tema
 #     da moldura (xfwm4). Botões Aplicar e Padrão VoidBR.
+#   - v1.1 (2026-10-27): Aba Visual Mac (temas do voidbr-mac-themes): aparência
+#     clara/escura, 9 cores de destaque, botões semáforo, GTK4/libadwaita e
+#     layout barra no topo + dock (docklike), com backup e volta ao visual
+#     anterior. Suporte ao XFCE em Wayland (labwc): cantos, sombras e moldura
+#     no rc.xml do labwc; picom, cortile e xfwm4 só no X11.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -38,9 +43,11 @@
 ##############################################################################
 """
 VoidBR XFCE Tweaks - ajustes visuais do VoidBR XFCE (picom, transparências,
-cortile e tema da moldura), sem editar arquivos na mão.
+cortile, tema da moldura e Visual Mac), sem editar arquivos na mão.
+Funciona no XFCE em X11 (xfwm4) e em Wayland (labwc).
 
-Requer: PyGObject (GTK4), xfconf (xfconf-query), picom, cortile.
+Requer: PyGObject (GTK4), xfconf (xfconf-query), picom, cortile,
+voidbr-mac-themes e xfce4-docklike-plugin (Visual Mac).
     sudo xbps-install -S python3-gobject gtk4 xfconf picom cortile
 
 Arquivos que o app altera (sempre no usuário atual):
@@ -48,19 +55,27 @@ Arquivos que o app altera (sempre no usuário atual):
     ~/.config/gtk-3.0/gtk.css         opacidade dos menus e dicas
     ~/.config/cortile/config.toml     layout e espaço entre janelas
     ~/.config/voidbr/compositor       modo do compositor (lido pelo voidbr-picom)
-    xfconf: xfce4-panel, xfce4-terminal, xfwm4
+    ~/.config/voidbr/mac.json         estado do Visual Mac e visual anterior
+    ~/.config/voidbr/mac-backup/      painéis guardados pelo layout Mac
+    ~/.config/gtk-4.0/                links do tema Mac para apps libadwaita
+    ~/.config/xfce4/labwc/rc.xml      tema, cantos, sombras e botões (Wayland)
+    xfconf: xfce4-panel, xfce4-terminal, xfwm4, xsettings
 """
 
 import gi
+import json
 import os
 import re
+import shutil
 import subprocess
 import threading
+import time
+import xml.etree.ElementTree as ET
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib, Gio
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
@@ -69,6 +84,47 @@ GTK_CSS = os.path.join(CONFIG, "gtk-3.0", "gtk.css")
 CORTILE_CONF = os.path.join(CONFIG, "cortile", "config.toml")
 MODO_COMPOSITOR = os.path.join(CONFIG, "voidbr", "compositor")
 LOG_PICOM = os.path.join(CACHE, "voidbr-picom.log")
+
+# Visual Mac (temas do pacote voidbr-mac-themes)
+TEMAS_DIR = "/usr/share/themes"
+MAC_DIR = "/usr/share/voidbr-xfce-config/mac"
+MAC_ESTADO = os.path.join(CONFIG, "voidbr", "mac.json")
+MAC_BACKUP = os.path.join(CONFIG, "voidbr", "mac-backup")
+PAINEL_XML = os.path.join(CONFIG, "xfce4", "xfconf", "xfce-perchannel-xml", "xfce4-panel.xml")
+PAINEL_PLUGINS = os.path.join(CONFIG, "xfce4", "panel")
+GTK4_DIR = os.path.join(CONFIG, "gtk-4.0")
+GTK4_ITENS = ["gtk.css", "gtk-dark.css", "assets", "windows-assets"]
+PLANK_AUTOSTART = os.path.join(CONFIG, "autostart", "plank.desktop")
+# labwc do XFCE em Wayland: o startxfce4 --wayland usa ~/.config/xfce4/labwc/rc.xml
+# (criado a partir do padrão do xfce4-session na primeira sessão)
+LABWC_RC = os.path.join(CONFIG, "xfce4", "labwc", "rc.xml")
+LABWC_PADRAO = "/usr/share/xfce4/labwc/labwc-rc.xml"
+LABWC_SEMAFOROS = "close,iconify,max:"
+
+APARENCIAS = [
+    ("Light", "☀️ Claro"),
+    ("Dark", "🌙 Escuro"),
+]
+
+CORES_MAC = [
+    ("", "🔵 Padrão (azul do Mac)"),
+    ("blue", "🩵 Azul"),
+    ("purple", "🟣 Roxo"),
+    ("pink", "🩷 Rosa"),
+    ("red", "🔴 Vermelho"),
+    ("orange", "🟠 Laranja"),
+    ("yellow", "🟡 Amarelo"),
+    ("green", "🟢 Verde"),
+    ("grey", "⚪ Cinza"),
+]
+
+# Cores de fundo (barra, dock, menus) de cada aparência do visual Mac
+FUNDO_MAC = {
+    "Light": {"rgb": (0.96, 0.96, 0.96), "css": (246, 246, 246), "whisker": "#f6f6f6"},
+    "Dark": {"rgb": (0.12, 0.12, 0.13), "css": (40, 40, 42), "whisker": "#2a2a2c"},
+}
+# Cores do VoidBR (Tokyo Night) quando o visual Mac está desligado
+FUNDO_VOIDBR = {"css": (26, 27, 38), "whisker": "#1a1b26"}
 
 INICIO_BLOCO = "# >>> voidbr-xfce-tweaks"
 FIM_BLOCO = "# <<< voidbr-xfce-tweaks"
@@ -107,6 +163,10 @@ PADRAO = {
     "layout": "vertical-right",
     "espaco": 10,
     "tema": "Tokyonight-Dark",
+    "mac": False,
+    "mac_aparencia": "Dark",
+    "mac_cor": "",
+    "mac_layout": True,
 }
 
 # Apps que ficam sempre opacos quando a opacidade das janelas é reduzida
@@ -372,18 +432,21 @@ def ler_menus():
     texto = ler_arquivo(GTK_CSS)
     bloco = re.search(re.escape(INICIO_CSS) + r"(.*?)" + re.escape(FIM_CSS), texto, re.S)
     alvo = bloco.group(1) if bloco else texto
-    m = re.search(r"menu[^{]*\{[^}]*rgba\(\s*26,\s*27,\s*38,\s*([0-9.]+)\s*\)", alvo)
+    m = re.search(r"menu[^{]*\{[^}]*rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([0-9.]+)\s*\)", alvo)
     return round(float(m.group(1)) * 100) if m else PADRAO["menus"]
 
 
-def gravar_menus(opacidade):
+def gravar_menus(opacidade, fundo=None):
+    """Grava a opacidade dos menus; `fundo` é a cor (FUNDO_VOIDBR ou FUNDO_MAC[...])."""
+    fundo = fundo or FUNDO_VOIDBR
+    r, g, b = fundo["css"]
     texto = remover_bloco(ler_arquivo(GTK_CSS), INICIO_CSS, FIM_CSS)
     a = opacidade / 100.0
     dica = min(1.0, a + 0.05)
     texto += (f"\n{INICIO_CSS}\n"
-              f"menu, .menu, .context-menu {{ background-color: rgba(26, 27, 38, {a:.2f}); }}\n"
-              f"tooltip, tooltip.background {{ background-color: rgba(26, 27, 38, {dica:.2f}); }}\n"
-              f"#whiskermenu-window {{ background-color: #1a1b26; }}\n"
+              f"menu, .menu, .context-menu {{ background-color: rgba({r}, {g}, {b}, {a:.2f}); }}\n"
+              f"tooltip, tooltip.background {{ background-color: rgba({r}, {g}, {b}, {dica:.2f}); }}\n"
+              f"#whiskermenu-window {{ background-color: {fundo['whisker']}; }}\n"
               f"{FIM_CSS}\n")
     gravar_arquivo(GTK_CSS, texto)
 
@@ -456,6 +519,325 @@ def listar_temas_xfwm4():
 
 
 # ---------------------------------------------------------------------------
+#   sessão (X11 ou Wayland)
+# ---------------------------------------------------------------------------
+
+def sessao_wayland():
+    """XFCE em Wayland (labwc): sem xfwm4, picom e cortile."""
+    return (os.environ.get("XDG_SESSION_TYPE") == "wayland"
+            or bool(os.environ.get("WAYLAND_DISPLAY")))
+
+
+def rodar(cmd, **kw):
+    """Roda um comando sem derrubar o app se ele não existir."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, **kw)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+# ---------------------------------------------------------------------------
+#   visual Mac
+# ---------------------------------------------------------------------------
+
+def nome_tema_mac(aparencia, cor):
+    return f"VoidBR-Mac-{aparencia}" + (f"-{cor}" if cor else "")
+
+
+def temas_mac_instalados():
+    return os.path.isdir(os.path.join(TEMAS_DIR, "VoidBR-Mac-Light"))
+
+
+def ler_estado_mac():
+    estado = {"ativo": False, "aparencia": PADRAO["mac_aparencia"], "cor": PADRAO["mac_cor"],
+              "layout": PADRAO["mac_layout"], "layout_aplicado": False, "anterior": {}}
+    try:
+        with open(MAC_ESTADO, encoding="utf-8") as f:
+            estado.update(json.load(f))
+    except (OSError, ValueError):
+        pass
+    return estado
+
+
+def gravar_estado_mac(estado):
+    gravar_arquivo(MAC_ESTADO, json.dumps(estado, indent=2, ensure_ascii=False) + "\n")
+
+
+def gsettings_ler(chave):
+    r = rodar(["gsettings", "get", "org.gnome.desktop.interface", chave])
+    return r.stdout.strip().strip("'") if r and r.returncode == 0 else None
+
+
+def gsettings_gravar(chave, valor):
+    if valor is not None:
+        rodar(["gsettings", "set", "org.gnome.desktop.interface", chave, valor])
+
+
+# ----- GTK4 / libadwaita -----
+
+def _link_nosso(caminho):
+    return os.path.islink(caminho) and os.readlink(caminho).startswith(
+        os.path.join(TEMAS_DIR, "VoidBR-Mac-"))
+
+
+def gtk4_ligar(tema):
+    """Os apps libadwaita ignoram o tema GTK: liga o CSS do tema em ~/.config/gtk-4.0.
+
+    Só cria/troca links nossos; um gtk.css próprio do usuário é mantido.
+    """
+    origem = os.path.join(TEMAS_DIR, tema, "gtk-4.0")
+    os.makedirs(GTK4_DIR, exist_ok=True)
+    for item in GTK4_ITENS:
+        destino = os.path.join(GTK4_DIR, item)
+        if os.path.lexists(destino) and not _link_nosso(destino):
+            continue
+        if os.path.lexists(destino):
+            os.remove(destino)
+        os.symlink(os.path.join(origem, item), destino)
+
+
+def gtk4_desligar():
+    for item in GTK4_ITENS:
+        destino = os.path.join(GTK4_DIR, item)
+        if _link_nosso(destino):
+            os.remove(destino)
+
+
+# ----- labwc (Wayland) -----
+
+def _labwc_abrir():
+    if not os.path.isfile(LABWC_RC):
+        os.makedirs(os.path.dirname(LABWC_RC), exist_ok=True)
+        if os.path.isfile(LABWC_PADRAO):
+            shutil.copy(LABWC_PADRAO, LABWC_RC)
+        else:
+            gravar_arquivo(LABWC_RC, '<?xml version="1.0"?>\n<labwc_config>\n</labwc_config>\n')
+    parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+    return ET.parse(LABWC_RC, parser)
+
+
+def _labwc_no(pai, caminho):
+    no = pai
+    for parte in caminho.split("/"):
+        filho = no.find(parte)
+        if filho is None:
+            filho = ET.SubElement(no, parte)
+        no = filho
+    return no
+
+
+CHAVES_LABWC = {
+    "nome": "theme/name",
+    "raio": "theme/cornerRadius",
+    "sombras": "theme/dropShadows",
+    "botoes": "theme/titlebar/layout",
+}
+
+
+def labwc_ler():
+    try:
+        raiz = _labwc_abrir().getroot()
+    except (OSError, ET.ParseError):
+        return {}
+    valores = {}
+    for chave, caminho in CHAVES_LABWC.items():
+        no = raiz.find(caminho)
+        valores[chave] = no.text.strip() if no is not None and no.text else None
+    return valores
+
+
+def labwc_gravar(valores, restaurar=False):
+    """Grava no rc.xml do labwc as chaves com valor.
+
+    Com restaurar=True, as chaves que não existiam antes (None) são removidas.
+    """
+    arvore = _labwc_abrir()
+    raiz = arvore.getroot()
+    for chave, caminho in CHAVES_LABWC.items():
+        if chave not in valores:
+            continue
+        if valores[chave] is not None:
+            _labwc_no(raiz, caminho).text = str(valores[chave])
+        elif restaurar:
+            pai_caminho, _, folha = caminho.rpartition("/")
+            pai = raiz.find(pai_caminho)
+            no = pai.find(folha) if pai is not None else None
+            if no is not None:
+                pai.remove(no)
+                # não deixa um <titlebar> vazio para trás
+                avo_caminho = pai_caminho.rpartition("/")[0]
+                avo = raiz.find(avo_caminho) if avo_caminho else None
+                if avo is not None and len(pai) == 0 and not (pai.text or "").strip():
+                    avo.remove(pai)
+    ET.indent(arvore, space="  ")
+    arvore.write(LABWC_RC, encoding="UTF-8", xml_declaration=True)
+    if sessao_wayland():
+        rodar(["labwc", "--reconfigure"], timeout=10)
+
+
+# ----- painéis -----
+
+def _esperar_sair(processo, segundos=5):
+    fim = time.time() + segundos
+    while time.time() < fim:
+        r = rodar(["pgrep", "-u", str(os.getuid()), "-x", processo])
+        if not r or r.returncode != 0:
+            return
+        time.sleep(0.2)
+
+
+def painel_trocar(xml_texto, pasta_plugins, substituir_pasta=False):
+    """Troca a configuração inteira dos painéis.
+
+    Fecha o painel e o xfconfd (que grava o cache dele ao sair), escreve o XML e os
+    arquivos dos plugins e abre o painel de novo.
+    """
+    rodar(["xfce4-panel", "--quit"], timeout=10)
+    _esperar_sair("xfce4-panel")
+    rodar(["pkill", "-u", str(os.getuid()), "-x", "xfconfd"])
+    _esperar_sair("xfconfd")
+    gravar_arquivo(PAINEL_XML, xml_texto)
+    if substituir_pasta and os.path.isdir(pasta_plugins):
+        shutil.rmtree(PAINEL_PLUGINS, ignore_errors=True)
+    if os.path.isdir(pasta_plugins):
+        shutil.copytree(pasta_plugins, PAINEL_PLUGINS, dirs_exist_ok=True)
+    subprocess.Popen(["xfce4-panel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    time.sleep(2)
+
+
+def pasta_downloads():
+    r = rodar(["xdg-user-dir", "DOWNLOAD"])
+    pasta = r.stdout.strip() if r and r.returncode == 0 else ""
+    return pasta if pasta and pasta != os.path.expanduser("~") else os.path.expanduser("~/Downloads")
+
+
+def painel_mac(aparencia):
+    xml_texto = ler_arquivo(os.path.join(MAC_DIR, "xfce4-panel.xml"))
+    if not xml_texto:
+        raise OSError(f"layout Mac não encontrado em {MAC_DIR}")
+    xml_texto = (xml_texto.replace("@DOWNLOAD@", pasta_downloads())
+                 .replace("@DARK@", "true" if aparencia == "Dark" else "false"))
+    painel_trocar(xml_texto, os.path.join(MAC_DIR, "panel"))
+
+
+def painel_backup():
+    os.makedirs(MAC_BACKUP, exist_ok=True)
+    if os.path.isfile(PAINEL_XML):
+        shutil.copy(PAINEL_XML, os.path.join(MAC_BACKUP, "xfce4-panel.xml"))
+    if os.path.isdir(PAINEL_PLUGINS):
+        shutil.copytree(PAINEL_PLUGINS, os.path.join(MAC_BACKUP, "panel"), dirs_exist_ok=True)
+
+
+def painel_restaurar():
+    xml_texto = ler_arquivo(os.path.join(MAC_BACKUP, "xfce4-panel.xml"))
+    if not xml_texto:
+        return False
+    painel_trocar(xml_texto, os.path.join(MAC_BACKUP, "panel"), substituir_pasta=True)
+    return True
+
+
+# ----- Plank (a dock do layout Mac é o docklike do painel) -----
+
+def plank_esconder():
+    """Desliga o Plank do autostart do usuário. Devolve True se mudou algo."""
+    texto = ler_arquivo(PLANK_AUTOSTART)
+    if not texto or re.search(r"^Hidden\s*=\s*true", texto, re.M | re.I):
+        return False
+    if re.search(r"^Hidden\s*=", texto, re.M):
+        texto = re.sub(r"^Hidden\s*=.*$", "Hidden=true", texto, flags=re.M)
+    else:
+        texto = texto.rstrip("\n") + "\nHidden=true\n"
+    gravar_arquivo(PLANK_AUTOSTART, texto)
+    rodar(["pkill", "-u", str(os.getuid()), "-x", "plank"])
+    return True
+
+
+def plank_mostrar():
+    texto = ler_arquivo(PLANK_AUTOSTART)
+    if texto:
+        gravar_arquivo(PLANK_AUTOSTART, re.sub(r"^Hidden\s*=.*$", "Hidden=false", texto,
+                                               flags=re.M))
+
+
+# ----- ligar / desligar -----
+
+def mac_aplicar(v, estado):
+    """Aplica o visual Mac (tema, moldura, painéis). Atualiza e devolve o estado."""
+    tema = nome_tema_mac(v["mac_aparencia"], v["mac_cor"])
+    moldura = f"VoidBR-Mac-{v['mac_aparencia']}"
+    if not os.path.isdir(os.path.join(TEMAS_DIR, tema)):
+        raise OSError(f"tema {tema} não instalado (pacote voidbr-mac-themes)")
+
+    if not estado["ativo"]:
+        # primeira vez: guarda o visual atual para o "desligar" voltar a ele
+        anterior = {
+            "gtk": xfconf_ler("xsettings", "/Net/ThemeName"),
+            "xfwm4": xfconf_ler("xfwm4", "/general/theme"),
+            "botoes": xfconf_ler("xfwm4", "/general/button_layout"),
+            "gtk_gsettings": gsettings_ler("gtk-theme"),
+            "esquema": gsettings_ler("color-scheme"),
+            "labwc": labwc_ler() if (sessao_wayland() or os.path.isfile(LABWC_RC)) else {},
+            "plank": False,
+        }
+        estado["anterior"] = anterior
+        estado["ativo"] = True
+
+    xfconf_gravar("xsettings", "/Net/ThemeName", "string", tema)
+    xfconf_gravar("xfwm4", "/general/theme", "string", moldura)
+    xfconf_gravar("xfwm4", "/general/button_layout", "string", "CHM|")
+    gsettings_gravar("gtk-theme", tema)
+    gsettings_gravar("color-scheme", "prefer-dark" if v["mac_aparencia"] == "Dark" else "default")
+    gtk4_ligar(tema)
+    if sessao_wayland() or os.path.isfile(LABWC_RC):
+        labwc_gravar({"nome": moldura, "raio": int(v["raio"]),
+                      "sombras": "yes" if v["sombras"] else "no", "botoes": LABWC_SEMAFOROS})
+
+    if v["mac_layout"] and not estado["layout_aplicado"]:
+        painel_backup()
+        painel_mac(v["mac_aparencia"])
+        estado["layout_aplicado"] = True
+        estado["anterior"]["plank"] = plank_esconder()
+    elif not v["mac_layout"] and estado["layout_aplicado"]:
+        painel_restaurar()
+        estado["layout_aplicado"] = False
+        if estado["anterior"].get("plank"):
+            plank_mostrar()
+    elif estado["layout_aplicado"]:
+        xfconf_gravar("xfce4-panel", "/panels/dark-mode", "bool",
+                      "true" if v["mac_aparencia"] == "Dark" else "false")
+
+    estado.update({"aparencia": v["mac_aparencia"], "cor": v["mac_cor"], "layout": v["mac_layout"]})
+    gravar_estado_mac(estado)
+    return estado
+
+
+def mac_desligar(estado):
+    """Volta ao visual de antes do visual Mac. Devolve o tema do xfwm4 restaurado."""
+    anterior = estado.get("anterior", {})
+    if estado.get("layout_aplicado"):
+        painel_restaurar()
+        if anterior.get("plank"):
+            plank_mostrar()
+    if anterior.get("gtk"):
+        xfconf_gravar("xsettings", "/Net/ThemeName", "string", anterior["gtk"])
+    if anterior.get("xfwm4"):
+        xfconf_gravar("xfwm4", "/general/theme", "string", anterior["xfwm4"])
+    if anterior.get("botoes"):
+        xfconf_gravar("xfwm4", "/general/button_layout", "string", anterior["botoes"])
+    gsettings_gravar("gtk-theme", anterior.get("gtk_gsettings"))
+    gsettings_gravar("color-scheme", anterior.get("esquema"))
+    gtk4_desligar()
+    if anterior.get("labwc"):
+        labwc_gravar(anterior["labwc"], restaurar=True)
+    shutil.rmtree(MAC_BACKUP, ignore_errors=True)
+    gravar_estado_mac({"ativo": False, "aparencia": estado.get("aparencia", "Dark"),
+                       "cor": estado.get("cor", ""), "layout": estado.get("layout", True),
+                       "layout_aplicado": False, "anterior": {}})
+    return anterior.get("xfwm4")
+
+
+# ---------------------------------------------------------------------------
 #   janela
 # ---------------------------------------------------------------------------
 
@@ -497,7 +879,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         titulo = Gtk.Label(label="🎨 VoidBR XFCE Tweaks", xalign=0)
         titulo.add_css_class("titulo-app")
         caixa.append(titulo)
-        sub = Gtk.Label(label="Efeitos, transparências, mosaico e moldura das janelas", xalign=0)
+        sub = Gtk.Label(label="Efeitos, transparências, mosaico, moldura e Visual Mac", xalign=0)
         sub.add_css_class("subtitulo")
         caixa.append(sub)
 
@@ -507,6 +889,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         abas.append_page(self._aba_transparencia(), Gtk.Label(label="💧 Transparência"))
         abas.append_page(self._aba_mosaico(), Gtk.Label(label="🧩 Mosaico"))
         abas.append_page(self._aba_moldura(), Gtk.Label(label="🪟 Moldura"))
+        abas.append_page(self._aba_mac(), Gtk.Label(label="🍎 Visual Mac"))
         caixa.append(abas)
 
         # --- Status ---
@@ -635,7 +1018,33 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         self.temas = listar_temas_xfwm4()
         self.dd_tema = self._lista(g, "Tema do xfwm4", self.temas or ["(nenhum tema encontrado)"],
                                    "Moldura e barra de título das janelas. "
-                                   "Muda na hora, sem reiniciar a sessão.")
+                                   "Muda na hora, sem reiniciar a sessão. "
+                                   "Com o Visual Mac ligado, a moldura é a dele.")
+        return g
+
+    def _aba_mac(self):
+        g = self._grade()
+        self.sw_mac = self._chave(g, "Visual Mac",
+                                  "Tema estilo macOS (claro ou escuro), botões semáforo à "
+                                  "esquerda e cantos arredondados, no X11 e no Wayland. "
+                                  "Desligar volta ao visual de antes.")
+        self.dd_aparencia = self._lista(g, "Aparência", [t for _, t in APARENCIAS])
+        self.dd_cor = self._lista(g, "Cor de destaque", [t for _, t in CORES_MAC],
+                                  "Seleções, botões principais e chaves ligadas.")
+        self.sw_layout_mac = self._chave(g, "Barra no topo + dock",
+                                         "Troca os painéis pelo layout do Mac: barra fina no "
+                                         "topo e dock centralizada embaixo, com Downloads e "
+                                         "Lixeira. Seus painéis ficam guardados e voltam ao "
+                                         "desligar.")
+        if not temas_mac_instalados():
+            aviso = Gtk.Label(xalign=0)
+            aviso.add_css_class("dica")
+            aviso.set_wrap(True)
+            aviso.set_markup("⚠️ <b>Temas não instalados.</b> Instale o pacote "
+                             "<b>voidbr-mac-themes</b> para usar o Visual Mac.")
+            g.attach(aviso, 0, g._linha, 3, 1)
+            g._linha += 1
+            self.sw_mac.set_sensitive(False)
         return g
 
     # ----- carregar / aplicar -----
@@ -668,6 +1077,18 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         v["tiling"] = tiling_ligado()
         v["layout"], v["espaco"] = ler_cortile()
         v["tema"] = xfconf_ler("xfwm4", "/general/theme") or PADRAO["tema"]
+        if sessao_wayland():
+            labwc = labwc_ler()
+            if labwc.get("raio") and labwc["raio"].isdigit():
+                v["raio"] = int(labwc["raio"])
+            if labwc.get("sombras"):
+                v["sombras"] = labwc["sombras"] == "yes"
+
+        estado = ler_estado_mac()
+        v["mac"] = estado["ativo"]
+        v["mac_aparencia"] = estado["aparencia"]
+        v["mac_cor"] = estado["cor"]
+        v["mac_layout"] = estado["layout"]
         return v
 
     def _mostrar(self, v):
@@ -688,6 +1109,13 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         self.esc_espaco.set_value(v["espaco"])
         if v["tema"] in self.temas:
             self.dd_tema.set_selected(self.temas.index(v["tema"]))
+        self.sw_mac.set_active(v["mac"])
+        aparencias = [a for a, _ in APARENCIAS]
+        self.dd_aparencia.set_selected(aparencias.index(v["mac_aparencia"])
+                                       if v["mac_aparencia"] in aparencias else 1)
+        cores = [c for c, _ in CORES_MAC]
+        self.dd_cor.set_selected(cores.index(v["mac_cor"]) if v["mac_cor"] in cores else 0)
+        self.sw_layout_mac.set_active(v["mac_layout"])
 
     def _coletar(self):
         return {
@@ -706,6 +1134,10 @@ class JanelaTweaks(Gtk.ApplicationWindow):
             "layout": LAYOUTS[self.dd_layout.get_selected()][0],
             "espaco": int(self.esc_espaco.get_value()),
             "tema": self.temas[self.dd_tema.get_selected()] if self.temas else "",
+            "mac": self.sw_mac.get_active(),
+            "mac_aparencia": APARENCIAS[self.dd_aparencia.get_selected()][0],
+            "mac_cor": CORES_MAC[self.dd_cor.get_selected()][0],
+            "mac_layout": self.sw_layout_mac.get_active(),
         }
 
     def carregar_valores(self):
@@ -713,6 +1145,9 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         self.label_status.set_text(self._resumo_compositor())
 
     def _resumo_compositor(self):
+        if sessao_wayland():
+            return ("🌊 Sessão Wayland (labwc): cantos, sombras e moldura vão para o labwc; "
+                    "desfoque, transparência de janelas e mosaico são só do X11.")
         log = ler_arquivo(LOG_PICOM).strip().splitlines()
         decisao = next((linha for linha in reversed(log) if linha.startswith("->")), "")
         rodando = subprocess.run(["pgrep", "-x", "picom"], capture_output=True).returncode == 0
@@ -734,11 +1169,33 @@ class JanelaTweaks(Gtk.ApplicationWindow):
 
     def _aplicar(self, v):
         erros = []
+        wayland = sessao_wayland()
+
+        # --- Visual Mac primeiro: pode trocar os painéis e a moldura ---
+        fundo = None
+        estado = ler_estado_mac()
         try:
-            gravar_modo(v["modo"])
-            gravar_picom(v)
-        except OSError as e:
-            erros.append(f"picom: {e}")
+            if v["mac"]:
+                estado = mac_aplicar(v, estado)
+                fundo = FUNDO_MAC[v["mac_aparencia"]]
+                v["tema"] = f"VoidBR-Mac-{v['mac_aparencia']}"
+            elif estado["ativo"]:
+                v["tema"] = mac_desligar(estado) or v["tema"]
+        except (OSError, ET.ParseError) as e:
+            erros.append(f"visual Mac: {e}")
+
+        if not wayland:
+            try:
+                gravar_modo(v["modo"])
+                gravar_picom(v)
+            except OSError as e:
+                erros.append(f"picom: {e}")
+        elif not v["mac"]:
+            # no Wayland, cantos e sombras são do labwc (o Visual Mac já gravou os dele)
+            try:
+                labwc_gravar({"raio": int(v["raio"]), "sombras": "yes" if v["sombras"] else "no"})
+            except (OSError, ET.ParseError) as e:
+                erros.append(f"labwc: {e}")
 
         try:
             for pid in ids_paineis():
@@ -748,6 +1205,8 @@ class JanelaTweaks(Gtk.ApplicationWindow):
                     cor = [float(x) for x in rgba[:3]] if len(rgba) == 4 else [0.0, 0.0, 0.0]
                 except ValueError:
                     cor = [0.0, 0.0, 0.0]
+                if fundo:
+                    cor = list(fundo["rgb"])
                 xfconf_gravar("xfce4-panel", f"{base}/background-style", "uint", 1)
                 xfconf_gravar_rgba("xfce4-panel", f"{base}/background-rgba",
                                    cor + [v["painel"] / 100.0])
@@ -758,33 +1217,35 @@ class JanelaTweaks(Gtk.ApplicationWindow):
                           "TERMINAL_BACKGROUND_TRANSPARENT")
             xfconf_gravar("xfce4-terminal", "/background-darkness", "double",
                           f"{v['terminal'] / 100.0:.2f}")
-            if v["tema"]:
+            if v["tema"] and not wayland:
                 xfconf_gravar("xfwm4", "/general/theme", "string", v["tema"])
         except Exception as e:  # noqa: BLE001 - mostrar qualquer falha no status
             erros.append(f"xfconf: {e}")
 
         try:
-            gravar_menus(v["menus"])
+            gravar_menus(v["menus"], fundo)
         except OSError as e:
             erros.append(f"gtk.css: {e}")
 
-        try:
-            gravar_cortile(v["layout"], v["espaco"])
-            subprocess.run(["voidbr-tiling", "on" if v["tiling"] else "off"],
-                           capture_output=True)
-        except (OSError, FileNotFoundError) as e:
-            erros.append(f"cortile: {e}")
+        if not wayland:
+            try:
+                gravar_cortile(v["layout"], v["espaco"])
+                subprocess.run(["voidbr-tiling", "on" if v["tiling"] else "off"],
+                               capture_output=True)
+            except (OSError, FileNotFoundError) as e:
+                erros.append(f"cortile: {e}")
 
-        try:
-            subprocess.run(["voidbr-picom"], capture_output=True, timeout=30)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            erros.append(f"voidbr-picom: {e}")
+            try:
+                subprocess.run(["voidbr-picom"], capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                erros.append(f"voidbr-picom: {e}")
 
         GLib.idle_add(self._ao_concluir, erros)
 
     def _ao_concluir(self, erros):
         self.botao_aplicar.set_sensitive(True)
         self.botao_padrao.set_sensitive(True)
+        self._mostrar(self._valores_atuais())
         if erros:
             self.label_status.set_text("❌ " + " | ".join(erros))
         else:
@@ -798,7 +1259,8 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         sobre.set_program_name("VoidBR XFCE Tweaks")
         sobre.set_version(VERSAO)
         sobre.set_comments("Ajustes visuais do VoidBR XFCE:\n"
-                           "picom, transparências, cortile e tema da moldura.")
+                           "picom, transparências, cortile, tema da moldura\n"
+                           "e Visual Mac (X11 e Wayland).")
         sobre.set_authors(["Vilmar Catafesta <vcatafesta@gmail.com>"])
         sobre.set_copyright("© 2026 Vilmar Catafesta")
         sobre.set_website("https://voidbr.org")

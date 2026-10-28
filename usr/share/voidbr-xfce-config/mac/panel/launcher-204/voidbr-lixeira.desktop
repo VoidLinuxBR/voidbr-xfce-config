@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Trash
+Name[pt_BR]=Lixeira
+Comment=Open the trash
+Comment[pt_BR]=Abrir a lixeira
+Exec=thunar trash:///
+Icon=user-trash
+Terminal=false
+StartupNotify=true

@@ -1,0 +1,147 @@
+<?xml version="1.1" encoding="UTF-8"?>
+
+<!-- Layout "Visual Mac" do VoidBR (voidbr-xfce-tweaks): barra fina no topo e dock
+     centralizada embaixo. @DOWNLOAD@ e @DARK@ são trocados ao aplicar. -->
+<channel name="xfce4-panel" version="1.0">
+  <property name="configver" type="int" value="2"/>
+  <property name="panels" type="array">
+    <value type="int" value="1"/>
+    <value type="int" value="2"/>
+    <property name="dark-mode" type="bool" value="@DARK@"/>
+    <property name="panel-1" type="empty">
+      <property name="position" type="string" value="p=6;x=0;y=0"/>
+      <property name="length" type="double" value="100"/>
+      <property name="position-locked" type="bool" value="true"/>
+      <property name="size" type="uint" value="28"/>
+      <property name="icon-size" type="uint" value="16"/>
+      <property name="mode" type="uint" value="0"/>
+      <property name="enter-opacity" type="uint" value="100"/>
+      <property name="leave-opacity" type="uint" value="100"/>
+      <property name="background-style" type="uint" value="1"/>
+      <property name="background-rgba" type="array">
+        <value type="double" value="0.000000"/>
+        <value type="double" value="0.000000"/>
+        <value type="double" value="0.000000"/>
+        <value type="double" value="0.300000"/>
+      </property>
+      <property name="plugin-ids" type="array">
+        <value type="int" value="101"/>
+        <value type="int" value="102"/>
+        <value type="int" value="103"/>
+        <value type="int" value="104"/>
+        <value type="int" value="105"/>
+        <value type="int" value="106"/>
+        <value type="int" value="107"/>
+      </property>
+    </property>
+    <property name="panel-2" type="empty">
+      <property name="position" type="string" value="p=10;x=0;y=0"/>
+      <property name="length" type="double" value="1"/>
+      <property name="length-adjust" type="bool" value="true"/>
+      <property name="position-locked" type="bool" value="true"/>
+      <property name="size" type="uint" value="56"/>
+      <property name="icon-size" type="uint" value="44"/>
+      <property name="mode" type="uint" value="0"/>
+      <property name="autohide-behavior" type="uint" value="0"/>
+      <property name="enter-opacity" type="uint" value="100"/>
+      <property name="leave-opacity" type="uint" value="100"/>
+      <property name="background-style" type="uint" value="1"/>
+      <property name="background-rgba" type="array">
+        <value type="double" value="0.000000"/>
+        <value type="double" value="0.000000"/>
+        <value type="double" value="0.000000"/>
+        <value type="double" value="0.300000"/>
+      </property>
+      <property name="plugin-ids" type="array">
+        <value type="int" value="201"/>
+        <value type="int" value="202"/>
+        <value type="int" value="203"/>
+        <value type="int" value="204"/>
+      </property>
+    </property>
+  </property>
+  <property name="plugins" type="empty">
+    <!-- barra superior: menu do sistema | espaço | bandeja, som, notificações, relógio, sessão -->
+    <property name="plugin-101" type="string" value="whiskermenu">
+      <property name="button-icon" type="string" value="voidbr"/>
+      <property name="show-button-title" type="bool" value="false"/>
+      <property name="button-single-row" type="bool" value="true"/>
+      <property name="view-mode" type="int" value="1"/>
+      <property name="default-category" type="int" value="2"/>
+      <property name="hover-switch-category" type="bool" value="true"/>
+      <property name="menu-opacity" type="int" value="85"/>
+      <property name="menu-width" type="int" value="370"/>
+      <property name="menu-height" type="int" value="500"/>
+      <property name="profile-shape" type="int" value="1"/>
+      <property name="show-command-settings" type="bool" value="true"/>
+      <property name="show-command-lockscreen" type="bool" value="true"/>
+      <property name="show-command-logoutuser" type="bool" value="true"/>
+      <property name="show-command-restart" type="bool" value="true"/>
+      <property name="show-command-shutdown" type="bool" value="true"/>
+    </property>
+    <property name="plugin-102" type="string" value="separator">
+      <property name="style" type="uint" value="0"/>
+      <property name="expand" type="bool" value="true"/>
+    </property>
+    <property name="plugin-103" type="string" value="systray">
+      <property name="square-icons" type="bool" value="true"/>
+      <property name="symbolic-icons" type="bool" value="true"/>
+      <property name="icon-size" type="int" value="16"/>
+      <property name="single-row" type="bool" value="true"/>
+      <property name="menu-is-primary" type="bool" value="false"/>
+      <property name="hide-new-items" type="bool" value="false"/>
+    </property>
+    <property name="plugin-104" type="string" value="pulseaudio">
+      <property name="enable-keyboard-shortcuts" type="bool" value="true"/>
+      <property name="show-notifications" type="bool" value="true"/>
+    </property>
+    <property name="plugin-105" type="string" value="notification-plugin"/>
+    <property name="plugin-106" type="string" value="clock">
+      <!-- relógio digital no estilo do Mac: "ter 27 out  22:40" (mesmo formato nos dois campos) -->
+      <property name="mode" type="uint" value="2"/>
+      <property name="digital-layout" type="uint" value="3"/>
+      <property name="digital-time-format" type="string" value="%a %d %b  %H:%M"/>
+      <property name="digital-date-format" type="string" value="%a %d %b  %H:%M"/>
+      <property name="digital-time-font" type="string" value="Sans Bold 10"/>
+      <property name="digital-date-font" type="string" value="Sans Bold 10"/>
+      <property name="timezone" type="string" value=""/>
+    </property>
+    <property name="plugin-107" type="string" value="actions">
+      <property name="appearance" type="uint" value="0"/>
+      <property name="items" type="array">
+        <value type="string" value="+lock-screen"/>
+        <value type="string" value="-switch-user"/>
+        <value type="string" value="+separator"/>
+        <value type="string" value="+suspend"/>
+        <value type="string" value="-hibernate"/>
+        <value type="string" value="-hybrid-sleep"/>
+        <value type="string" value="+separator"/>
+        <value type="string" value="+shutdown"/>
+        <value type="string" value="+restart"/>
+        <value type="string" value="+separator"/>
+        <value type="string" value="+logout"/>
+        <value type="string" value="-logout-dialog"/>
+      </property>
+    </property>
+    <!-- dock: apps fixados e abertos | separador | Downloads | Lixeira -->
+    <property name="plugin-201" type="string" value="docklike"/>
+    <property name="plugin-202" type="string" value="separator">
+      <property name="style" type="uint" value="1"/>
+      <property name="expand" type="bool" value="false"/>
+    </property>
+    <property name="plugin-203" type="string" value="directorymenu">
+      <property name="base-directory" type="string" value="@DOWNLOAD@"/>
+      <property name="icon-name" type="string" value="folder-download"/>
+      <property name="open-folder" type="bool" value="true"/>
+      <property name="open-in-terminal" type="bool" value="false"/>
+      <property name="new-folder" type="bool" value="false"/>
+      <property name="new-document" type="bool" value="false"/>
+      <property name="hidden-files" type="bool" value="false"/>
+    </property>
+    <property name="plugin-204" type="string" value="launcher">
+      <property name="items" type="array">
+        <value type="string" value="voidbr-lixeira.desktop"/>
+      </property>
+    </property>
+  </property>
+</channel>
