@@ -26,7 +26,7 @@
 #   - v1.3 (2026-10-29): Aba Teclado (Wayland/labwc): layouts, modelo e atalho
 #     de troca em ~/.config/xfce4/labwc/environment (+ lock); --teclado abre
 #     direto nela (chamado pelo voidbr-teclado). Plank volta pelo voidbr-plank
-#     ao desligar o layout Mac.
+#     ao desligar o layout Mac. Mosaico (cortile) desligado de fábrica.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -202,7 +202,7 @@ PADRAO = {
     "menus": 80,
     "whisker": 80,
     "terminal": 75,
-    "tiling": True,
+    "tiling": False,           # mosaico desligado de fábrica (liga na aba Mosaico)
     "layout": "vertical-left",
     "espaco": 10,
     "tema": "Tokyonight-Dark",
@@ -1204,7 +1204,10 @@ class JanelaTweaks(Gtk.ApplicationWindow):
     def _aba_mosaico(self):
         g = self._grade()
         self.sw_tiling = self._chave(g, "Mosaico (cortile)",
-                                     "Liga agora e nos próximos logins.")
+                                     "Vem desligado de fábrica. Ao ligar aqui, vale agora e "
+                                     "nos próximos logins. Pelo terminal: voidbr-tiling on "
+                                     "(liga), voidbr-tiling off (desliga) e voidbr-tiling "
+                                     "status (mostra o estado).")
         self.dd_layout = self._lista(g, "Layout inicial", [t for _, t in LAYOUTS],
                                      "Ao trocar, todas as áreas de trabalho passam a usar o "
                                      "novo layout. Maximizar uma janela (ou Ctrl+Shift+Espaço) "
@@ -1213,7 +1216,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         atalhos = Gtk.Label(xalign=0)
         atalhos.add_css_class("dica")
         atalhos.set_markup(
-            "<b>Atalhos do cortile</b>\n"
+            "<b>Atalhos do cortile</b> (só com o mosaico ligado)\n"
             "Ctrl+Shift+T  liga/desliga   •   Ctrl+Shift+setas  muda o layout\n"
             "Ctrl+Shift+PgUp/PgDn  alterna layouts   •   Ctrl+Shift+BackSpace  reinicia proporções"
         )
