@@ -10,7 +10,12 @@
 #   a dock é o docklike: o Plank fica escondido (Hidden=true) e o mac.json
 #   marca que ele volta ao desligar o layout Mac.
 #
+#   Antes de tudo, o voidbr-xfce-tweaks --corrigir acerta o que a atualização
+#   não sobrescreve (tema do labwc inexistente, gsettings, mac.json antigo).
+#
 #   Chamado por ~/.config/autostart/voidbr-mac-sessao.desktop.
+
+command -v voidbr-xfce-tweaks >/dev/null && voidbr-xfce-tweaks --corrigir
 
 config="${XDG_CONFIG_HOME:-$HOME/.config}"
 plank_auto="$config/autostart/plank.desktop"

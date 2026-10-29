@@ -29,6 +29,8 @@
 #     ao desligar o layout Mac. Mosaico (cortile) desligado de fábrica.
 #     Ao desligar o Visual Mac no Wayland, volta o tema escuro do labwc
 #     (Tokyonight-Dark) quando o anterior não existe, e o GTK do gsettings.
+#     --corrigir (no login, pelo voidbr-mac-sessao): acerta tema do labwc,
+#     gsettings e mac.json quebrados que a atualização não sobrescreve.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -780,6 +782,60 @@ def labwc_tema_existe(nome):
              "/usr/share/themes", "/usr/local/share/themes", "/opt/share/themes"]
     return any(os.path.isfile(os.path.join(b, nome, sub, "themerc"))
                for b in bases for sub in ("labwc", "openbox-3"))
+
+
+# ----- correções no login (--corrigir, chamado pelo voidbr-mac-sessao) -----
+
+def _tema_escuro(nome):
+    nome = (nome or "").lower()
+    return any(p in nome for p in ("dark", "nokto", "night", "noir", "black"))
+
+
+def corrigir_sessao():
+    """Acerta estados quebrados que a atualização (--only-new) não alcança.
+
+    Só troca o que está quebrado; nunca uma escolha válida do usuário.
+    Devolve a lista do que foi corrigido.
+    """
+    feitos = []
+    estado = ler_estado_mac()
+
+    if estado.get("ativo"):
+        # o "anterior" é o que volta ao desligar o Visual Mac
+        anterior = estado.get("anterior") or {}
+        mudou = False
+        labwc = anterior.get("labwc")
+        if labwc and not labwc_tema_existe(labwc.get("nome")):
+            labwc["nome"] = LABWC_TEMA_VOIDBR
+            mudou = True
+        if not anterior.get("gtk_gsettings") and anterior.get("gtk"):
+            anterior["gtk_gsettings"] = anterior["gtk"]
+            if not anterior.get("esquema") and _tema_escuro(anterior["gtk"]):
+                anterior["esquema"] = "prefer-dark"
+            mudou = True
+        if mudou:
+            gravar_estado_mac(estado)
+            feitos.append("mac.json: visual anterior")
+        return feitos
+
+    if sessao_wayland() and os.path.isfile(LABWC_RC):
+        try:
+            nome = labwc_ler().get("nome")
+            if not labwc_tema_existe(nome) and labwc_tema_existe(LABWC_TEMA_VOIDBR):
+                labwc_gravar({"nome": LABWC_TEMA_VOIDBR})
+                feitos.append(f"labwc: tema {nome or '(vazio)'} -> {LABWC_TEMA_VOIDBR}")
+        except (OSError, ET.ParseError):
+            pass
+
+    gtk_gs = gsettings_ler("gtk-theme")
+    if gtk_gs and gtk_gs.startswith("VoidBR-Mac"):
+        gtk = xfconf_ler("xsettings", "/Net/ThemeName")
+        if gtk and not gtk.startswith("VoidBR-Mac"):
+            gsettings_gravar("gtk-theme", gtk)
+            if _tema_escuro(gtk):
+                gsettings_gravar("color-scheme", "prefer-dark")
+            feitos.append(f"gsettings: tema {gtk_gs} -> {gtk}")
+    return feitos
 
 
 # ----- teclado (Wayland, labwc) -----
@@ -1718,6 +1774,11 @@ if __name__ == "__main__":
         # escape caso uma fonte deixe a janela ilegível
         gravar_prefs_app(font_family="", font_scale=1.0)
         print("voidbr-xfce-tweaks: fonte voltou ao padrão do sistema")
+    if "--corrigir" in sys.argv[1:]:
+        # sem janela: correções de login (voidbr-mac-sessao)
+        for feito in corrigir_sessao():
+            print(f"voidbr-xfce-tweaks: {feito}")
+        sys.exit(0)
     app = AppTweaks()
     if "--teclado" in sys.argv[1:]:
         # abre direto na aba Teclado (voidbr-teclado no Wayland)
