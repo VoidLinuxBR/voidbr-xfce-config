@@ -8,10 +8,10 @@
     "gtk": "Adapta-Nokto",
     "xfwm4": "Tokyonight-Dark",
     "botoes": "OST|HMC",
-    "gtk_gsettings": null,
-    "esquema": null,
+    "gtk_gsettings": "Adapta-Nokto",
+    "esquema": "prefer-dark",
     "labwc": {
-      "nome": "Adwaita",
+      "nome": "Tokyonight-Dark",
       "raio": "8",
       "sombras": null,
       "botoes": null

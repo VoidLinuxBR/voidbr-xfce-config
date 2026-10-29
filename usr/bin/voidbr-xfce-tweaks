@@ -27,6 +27,8 @@
 #     de troca em ~/.config/xfce4/labwc/environment (+ lock); --teclado abre
 #     direto nela (chamado pelo voidbr-teclado). Plank volta pelo voidbr-plank
 #     ao desligar o layout Mac. Mosaico (cortile) desligado de fábrica.
+#     Ao desligar o Visual Mac no Wayland, volta o tema escuro do labwc
+#     (Tokyonight-Dark) quando o anterior não existe, e o GTK do gsettings.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -115,6 +117,7 @@ PLANK_AUTOSTART = os.path.join(CONFIG, "autostart", "plank.desktop")
 LABWC_RC = os.path.join(CONFIG, "xfce4", "labwc", "rc.xml")
 LABWC_PADRAO = "/usr/share/xfce4/labwc/labwc-rc.xml"
 LABWC_SEMAFOROS = "close,iconify,max:"
+LABWC_TEMA_VOIDBR = "Tokyonight-Dark"     # tema escuro do labwc fora do Visual Mac
 # teclado do XFCE em Wayland: o labwc lê o layout de ~/.config/xfce4/labwc/environment;
 # o "lock" impede o startxfce4 de reescrever esse arquivo a cada login
 LABWC_ENV = os.path.join(CONFIG, "xfce4", "labwc", "environment")
@@ -768,6 +771,17 @@ def labwc_gravar(valores, restaurar=False):
         rodar(["labwc", "--reconfigure"], timeout=10)
 
 
+def labwc_tema_existe(nome):
+    """O labwc só acha temas com pasta labwc/ ou openbox-3/ (labwc-theme(5))."""
+    if not nome:
+        return False
+    dados = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    bases = [os.path.join(dados, "themes"), os.path.expanduser("~/.themes"),
+             "/usr/share/themes", "/usr/local/share/themes", "/opt/share/themes"]
+    return any(os.path.isfile(os.path.join(b, nome, sub, "themerc"))
+               for b in bases for sub in ("labwc", "openbox-3"))
+
+
 # ----- teclado (Wayland, labwc) -----
 
 def teclado_ler():
@@ -993,11 +1007,16 @@ def mac_desligar(estado):
         xfconf_gravar("xfwm4", "/general/theme", "string", anterior["xfwm4"])
     if anterior.get("botoes"):
         xfconf_gravar("xfwm4", "/general/button_layout", "string", anterior["botoes"])
-    gsettings_gravar("gtk-theme", anterior.get("gtk_gsettings"))
+    # mac.json antigo podia ter o tema do gsettings vazio: usa o do xfconf
+    gsettings_gravar("gtk-theme", anterior.get("gtk_gsettings") or anterior.get("gtk"))
     gsettings_gravar("color-scheme", anterior.get("esquema"))
     gtk4_desligar()
     if anterior.get("labwc"):
-        labwc_gravar(anterior["labwc"], restaurar=True)
+        labwc = dict(anterior["labwc"])
+        # tema que o labwc não acha (ex.: "Adwaita") cai no padrão embutido, que é claro
+        if not labwc_tema_existe(labwc.get("nome")):
+            labwc["nome"] = LABWC_TEMA_VOIDBR
+        labwc_gravar(labwc, restaurar=True)
     shutil.rmtree(MAC_BACKUP, ignore_errors=True)
     gravar_estado_mac({"ativo": False, "aparencia": estado.get("aparencia", "Dark"),
                        "cor": estado.get("cor", ""), "layout": estado.get("layout", True),

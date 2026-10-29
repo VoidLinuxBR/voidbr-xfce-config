@@ -1,0 +1,21 @@
+# Tokyo Night para o labwc (XFCE em Wayland do VoidBR)
+# Usado no visual Não Mac; o Visual Mac usa os temas do voidbr-mac-themes.
+border.width: 1
+window.titlebar.padding.height: 4
+window.active.title.bg.color: #1a1b26
+window.inactive.title.bg.color: #16161e
+window.active.label.text.color: #c0caf5
+window.inactive.label.text.color: #565f89
+window.active.border.color: #2a2e42
+window.inactive.border.color: #16161e
+window.active.button.unpressed.image.color: #c0caf5
+window.inactive.button.unpressed.image.color: #565f89
+window.active.button.close.unpressed.image.color: #f7768e
+menu.items.bg.color: #1a1b26
+menu.items.text.color: #c0caf5
+menu.items.active.bg.color: #7aa2f7
+menu.items.active.text.color: #1a1b26
+menu.separator.color: #2a2e42
+osd.bg.color: #1a1b26
+osd.border.color: #7aa2f7
+osd.label.text.color: #c0caf5
