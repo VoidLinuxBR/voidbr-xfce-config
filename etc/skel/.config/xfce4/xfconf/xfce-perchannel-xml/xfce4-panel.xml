@@ -63,21 +63,35 @@
   <property name="plugins" type="empty">
     <!-- barra superior: menu do sistema | espaço | bandeja, som, notificações, relógio, sessão -->
     <property name="plugin-101" type="string" value="whiskermenu">
-      <property name="button-icon" type="string" value="voidbr"/>
-      <property name="show-button-title" type="bool" value="false"/>
-      <property name="button-single-row" type="bool" value="true"/>
+      <property name="category-show-name" type="bool" value="true"/>
+      <property name="launcher-show-tooltip" type="bool" value="true"/>
       <property name="view-mode" type="int" value="1"/>
+      <property name="launcher-show-description" type="bool" value="true"/>
+      <property name="button-icon" type="string" value="voidbr"/>
+      <property name="button-single-row" type="bool" value="true"/>
       <property name="default-category" type="int" value="2"/>
       <property name="hover-switch-category" type="bool" value="true"/>
-      <property name="menu-opacity" type="int" value="85"/>
+      <property name="show-command-settings" type="bool" value="true"/>
+      <property name="show-command-lockscreen" type="bool" value="false"/>
+      <property name="show-command-logout" type="bool" value="false"/>
+      <property name="show-command-menueditor" type="bool" value="true"/>
+      <property name="show-command-profile" type="bool" value="true"/>
+      <property name="menu-opacity" type="int" value="80"/>
       <property name="menu-width" type="int" value="370"/>
       <property name="menu-height" type="int" value="500"/>
+      <property name="position-categories-horizontal" type="bool" value="false"/>
+      <property name="position-categories-alternate" type="bool" value="true"/>
       <property name="profile-shape" type="int" value="1"/>
-      <property name="show-command-settings" type="bool" value="true"/>
-      <property name="show-command-lockscreen" type="bool" value="true"/>
+      <property name="show-button-title" type="bool" value="false"/>
       <property name="show-command-logoutuser" type="bool" value="true"/>
       <property name="show-command-restart" type="bool" value="true"/>
       <property name="show-command-shutdown" type="bool" value="true"/>
+      <property name="launcher-show-name" type="bool" value="false"/>
+      <property name="position-profile-alternate" type="bool" value="true"/>
+      <property name="position-search-alternate" type="bool" value="false"/>
+      <property name="position-commands-alternate" type="bool" value="false"/>
+      <property name="show-command-suspend" type="bool" value="true"/>
+      <property name="favorites-in-recent" type="bool" value="true"/>
     </property>
     <property name="plugin-102" type="string" value="separator">
       <property name="style" type="uint" value="0"/>
