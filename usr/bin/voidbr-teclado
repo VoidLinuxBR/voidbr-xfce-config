@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#
+# voidbr-teclado - item "Teclado" do XFCE do VoidBR (X11 e Wayland)
+#   No X11 abre o xfce4-keyboard-settings. No Wayland (labwc) o teclado é do
+#   compositor e o app do XFCE não funciona: abre a aba Teclado do
+#   voidbr-xfce-tweaks, que grava ~/.config/xfce4/labwc/environment.
+#
+#   Chamado por ~/.local/share/applications/xfce4-keyboard-settings.desktop.
+
+if [[ "$XDG_SESSION_TYPE" == "wayland" || -n "$WAYLAND_DISPLAY" ]]; then
+	exec voidbr-xfce-tweaks --teclado
+fi
+exec xfce4-keyboard-settings "$@"

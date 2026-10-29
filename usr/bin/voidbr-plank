@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# voidbr-plank - abre o Plank no XFCE do VoidBR (X11 e Wayland)
+#   O Plank só funciona em X11. No Wayland (labwc) roda pelo XWayland, forçando
+#   o backend X11; nesse modo ele só enxerga janelas de apps X11.
+#
+#   Chamado pelo autostart ~/.config/autostart/plank.desktop (Exec trocado pelo
+#   voidbr-mac-sessao) e pelo voidbr-xfce-tweaks ao desligar o layout Mac.
+
+command -v plank >/dev/null || exit 0
+
+# já está rodando
+pgrep -u "$UID" -x plank >/dev/null && exit 0
+
+if [[ "$XDG_SESSION_TYPE" == "wayland" || -n "$WAYLAND_DISPLAY" ]]; then
+	command -v Xwayland >/dev/null || exit 0
+	exec env XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 plank "$@"
+fi
+exec plank "$@"

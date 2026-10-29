@@ -5,7 +5,46 @@
 #   pasta, que o skel não conhece (muda com o idioma e o usuário). Preenche só se
 #   estiver vazio, para não desfazer o que a pessoa escolher depois.
 #
+#   Plank: o autostart (plank.desktop, do voidbr-base-config) passa a usar o
+#   voidbr-plank, que também sobe no Wayland (XWayland). Com o layout Mac ativo
+#   a dock é o docklike: o Plank fica escondido (Hidden=true) e o mac.json
+#   marca que ele volta ao desligar o layout Mac.
+#
 #   Chamado por ~/.config/autostart/voidbr-mac-sessao.desktop.
+
+config="${XDG_CONFIG_HOME:-$HOME/.config}"
+plank_auto="$config/autostart/plank.desktop"
+mac_estado="$config/voidbr/mac.json"
+
+if [[ -f "$plank_auto" ]]; then
+	sed -i 's/^Exec[[:space:]]*=[[:space:]]*plank[[:space:]]*$/Exec=voidbr-plank/' "$plank_auto"
+
+	if grep -Eq '"layout_aplicado"[[:space:]]*:[[:space:]]*true' "$mac_estado" 2>/dev/null &&
+		! grep -Eqi '^Hidden[[:space:]]*=[[:space:]]*true' "$plank_auto"; then
+		if grep -Eq '^Hidden[[:space:]]*=' "$plank_auto"; then
+			sed -i 's/^Hidden[[:space:]]*=.*/Hidden=true/' "$plank_auto"
+		else
+			echo 'Hidden=true' >>"$plank_auto"
+		fi
+		# ao desligar o layout Mac, o voidbr-xfce-tweaks traz o Plank de volta
+		python3 - "$mac_estado" <<'PY' 2>/dev/null
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    estado = json.load(f)
+estado.setdefault("anterior", {})["plank"] = True
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump(estado, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PY
+		# o autostart pode ter subido o Plank antes (ou logo depois) daqui
+		(
+			for _ in $(seq 20); do
+				pkill -u "$UID" -x plank
+				sleep 0.5
+			done
+		) &
+	fi
+fi
 
 command -v xfconf-query >/dev/null || exit 0
 

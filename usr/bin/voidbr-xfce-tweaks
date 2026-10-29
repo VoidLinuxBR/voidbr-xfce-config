@@ -3,7 +3,7 @@
 #
 #   voidbr-xfce-tweaks
 #   Created: sáb 24 out 2026 12:40:00 -04
-#   Altered: ter 27 out 2026 23:10:00 -04
+#   Altered: qui 29 out 2026 11:20:00 -04
 #
 #   Copyright (c) 2026, Vilmar Catafesta <vcatafesta@gmail.com>
 #   Copyright (c) 2026, ChiliLinux Development Team <https://chililinux.com> <https://github.com/chililinux>
@@ -23,6 +23,10 @@
 #   - v1.2 (2026-10-27): Tamanho da fonte do app (A− / 100% / A+, Ctrl+ Ctrl- Ctrl0)
 #     e família da fonte (menu ☰ → Aparência), gravados em
 #     ~/.config/voidbr/xfce-tweaks.json; --reset-font volta ao padrão.
+#   - v1.3 (2026-10-29): Aba Teclado (Wayland/labwc): layouts, modelo e atalho
+#     de troca em ~/.config/xfce4/labwc/environment (+ lock); --teclado abre
+#     direto nela (chamado pelo voidbr-teclado). Plank volta pelo voidbr-plank
+#     ao desligar o layout Mac.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -46,7 +50,8 @@
 ##############################################################################
 """
 VoidBR XFCE Tweaks - ajustes visuais do VoidBR XFCE (picom, transparências,
-cortile, tema da moldura e Visual Mac), sem editar arquivos na mão.
+cortile, tema da moldura, Visual Mac e teclado no Wayland), sem editar
+arquivos na mão.
 Funciona no XFCE em X11 (xfwm4) e em Wayland (labwc).
 
 Requer: PyGObject (GTK4), xfconf (xfconf-query), picom, cortile,
@@ -63,6 +68,8 @@ Arquivos que o app altera (sempre no usuário atual):
     ~/.config/voidbr/mac-backup/      painéis guardados pelo layout Mac
     ~/.config/gtk-4.0/                links do tema Mac para apps libadwaita
     ~/.config/xfce4/labwc/rc.xml      tema, cantos, sombras e botões (Wayland)
+    ~/.config/xfce4/labwc/environment layout, modelo e troca do teclado (Wayland)
+    ~/.config/autostart/plank.desktop Plank escondido no layout Mac
     xfconf: xfce4-panel, xfce4-terminal, xfwm4, xsettings
 """
 
@@ -80,7 +87,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, GLib, Gio, Pango
 
-VERSAO = "1.2"
+VERSAO = "1.3"
 
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
@@ -108,6 +115,10 @@ PLANK_AUTOSTART = os.path.join(CONFIG, "autostart", "plank.desktop")
 LABWC_RC = os.path.join(CONFIG, "xfce4", "labwc", "rc.xml")
 LABWC_PADRAO = "/usr/share/xfce4/labwc/labwc-rc.xml"
 LABWC_SEMAFOROS = "close,iconify,max:"
+# teclado do XFCE em Wayland: o labwc lê o layout de ~/.config/xfce4/labwc/environment;
+# o "lock" impede o startxfce4 de reescrever esse arquivo a cada login
+LABWC_ENV = os.path.join(CONFIG, "xfce4", "labwc", "environment")
+LABWC_LOCK = os.path.join(CONFIG, "xfce4", "labwc", "lock")
 
 APARENCIAS = [
     ("Light", "☀️ Claro"),
@@ -154,6 +165,30 @@ LAYOUTS = [
     ("maximized", "Maximizado"),
 ]
 
+# Teclado (Wayland): códigos do xkeyboard-config. "br" já é o ABNT2.
+TECLADO_LAYOUTS = [
+    ("br", "🇧🇷 Português (Brasil, ABNT2)"),
+    ("br(nodeadkeys)", "🇧🇷 Português (Brasil, ABNT2, sem teclas mortas)"),
+    ("us", "🇺🇸 Inglês (EUA)"),
+    ("us(intl)", "🇺🇸 Inglês (EUA, internacional, com acentos)"),
+    ("us(alt-intl)", "🇺🇸 Inglês (EUA, internacional com AltGr)"),
+    ("pt", "🇵🇹 Português (Portugal)"),
+    ("es", "🇪🇸 Espanhol"),
+    ("latam", "🌎 Espanhol (América Latina)"),
+]
+TECLADO_MODELOS = [
+    ("abnt2", "Brasileiro ABNT2"),
+    ("pc105", "Genérico 105 teclas"),
+    ("pc104", "Genérico 104 teclas (EUA)"),
+]
+TECLADO_TROCAS = [
+    ("grp:alt_shift_toggle", "Alt + Shift"),
+    ("grp:ctrl_shift_toggle", "Ctrl + Shift"),
+    ("grp:win_space_toggle", "Win + Espaço"),
+    ("grp:caps_toggle", "Caps Lock"),
+    ("", "Sem atalho"),
+]
+
 # Valores do skel do VoidBR (botão "Padrão VoidBR")
 PADRAO = {
     "modo": "auto",
@@ -175,6 +210,10 @@ PADRAO = {
     "mac_aparencia": "Dark",
     "mac_cor": "",
     "mac_layout": True,
+    "kb_layout1": "br",        # teclado (só Wayland): ABNT2 + EUA, Alt+Shift troca
+    "kb_layout2": "us",
+    "kb_modelo": "abnt2",
+    "kb_troca": "grp:alt_shift_toggle",
 }
 
 # Apps que ficam sempre opacos quando a opacidade das janelas é reduzida
@@ -729,6 +768,74 @@ def labwc_gravar(valores, restaurar=False):
         rodar(["labwc", "--reconfigure"], timeout=10)
 
 
+# ----- teclado (Wayland, labwc) -----
+
+def teclado_ler():
+    """Lê layouts, modelo e atalho de troca do environment do labwc."""
+    env = {}
+    for linha in ler_arquivo(LABWC_ENV).splitlines():
+        linha = linha.strip()
+        if linha and not linha.startswith("#") and "=" in linha:
+            chave, valor = linha.split("=", 1)
+            env[chave.strip()] = valor.strip().strip('"\'')
+    layouts = [x.strip() for x in env.get("XKB_DEFAULT_LAYOUT", "").split(",")]
+    variantes = [x.strip() for x in env.get("XKB_DEFAULT_VARIANT", "").split(",")]
+    for i, var in enumerate(variantes):
+        if var and i < len(layouts) and layouts[i] and "(" not in layouts[i]:
+            layouts[i] = f"{layouts[i]}({var})"
+    layouts = [x for x in layouts if x]
+    troca = next((o for o in env.get("XKB_DEFAULT_OPTIONS", "").split(",")
+                  if o.strip().startswith("grp:")), "")
+    return {
+        "kb_layout1": layouts[0] if layouts else "us",   # sem layout, o labwc usa "us"
+        "kb_layout2": layouts[1] if len(layouts) > 1 else "",
+        "kb_modelo": env.get("XKB_DEFAULT_MODEL", "") or "pc105",
+        "kb_troca": troca.strip(),
+    }
+
+
+def teclado_gravar(v):
+    """Grava o teclado no environment do labwc, mantendo as outras linhas.
+    Devolve True se mudou algo."""
+    layouts = ",".join(x for x in (v["kb_layout1"], v["kb_layout2"]) if x)
+    texto = ler_arquivo(LABWC_ENV)
+    opcoes = []
+    for linha in texto.splitlines():
+        if linha.strip().startswith("XKB_DEFAULT_OPTIONS="):
+            opcoes = [o.strip() for o in linha.split("=", 1)[1].strip().strip('"\'').split(",")
+                      if o.strip() and not o.strip().startswith("grp:")]
+    if v["kb_troca"] and v["kb_layout2"]:
+        opcoes.insert(0, v["kb_troca"])
+    novas = {
+        "XKB_DEFAULT_MODEL": v["kb_modelo"],
+        "XKB_DEFAULT_LAYOUT": layouts,
+        "XKB_DEFAULT_OPTIONS": ",".join(opcoes),
+    }
+    saida, vistas = [], set()
+    for linha in texto.splitlines():
+        chave = linha.split("=", 1)[0].strip() if "=" in linha else ""
+        if chave == "XKB_DEFAULT_VARIANT":
+            continue        # a variante vai junto do layout: br(nodeadkeys)
+        if chave in novas and not linha.lstrip().startswith("#"):
+            if chave not in vistas and novas[chave]:
+                saida.append(f"{chave}={novas[chave]}")
+            vistas.add(chave)
+            continue
+        saida.append(linha)
+    for chave, valor in novas.items():
+        if chave not in vistas and valor:
+            saida.append(f"{chave}={valor}")
+    novo = "\n".join(saida).strip("\n") + "\n"
+    mudou = novo != texto
+    if mudou:
+        gravar_arquivo(LABWC_ENV, novo)
+    if not os.path.exists(LABWC_LOCK):
+        gravar_arquivo(LABWC_LOCK, "")
+    if mudou and sessao_wayland():
+        rodar(["labwc", "--reconfigure"], timeout=10)
+    return mudou
+
+
 # ----- painéis -----
 
 def _esperar_sair(processo, segundos=5):
@@ -808,10 +915,17 @@ def plank_esconder():
 
 
 def plank_mostrar():
+    """Liga o Plank no autostart e já abre (voidbr-plank: X11 ou XWayland)."""
     texto = ler_arquivo(PLANK_AUTOSTART)
     if texto:
-        gravar_arquivo(PLANK_AUTOSTART, re.sub(r"^Hidden\s*=.*$", "Hidden=false", texto,
-                                               flags=re.M))
+        texto = re.sub(r"^Hidden\s*=.*$", "Hidden=false", texto, flags=re.M)
+        texto = re.sub(r"^Exec\s*=\s*plank\s*$", "Exec=voidbr-plank", texto, flags=re.M)
+        gravar_arquivo(PLANK_AUTOSTART, texto)
+        try:
+            subprocess.Popen(["voidbr-plank"], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            pass
 
 
 # ----- ligar / desligar -----
@@ -968,17 +1082,20 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         titulo = Gtk.Label(label="🎨 VoidBR XFCE Tweaks", xalign=0)
         titulo.add_css_class("titulo-app")
         caixa.append(titulo)
-        sub = Gtk.Label(label="Efeitos, transparências, mosaico, moldura e Visual Mac", xalign=0)
+        sub = Gtk.Label(label="Efeitos, transparências, mosaico, moldura, Visual Mac e teclado",
+                        xalign=0)
         sub.add_css_class("subtitulo")
         caixa.append(sub)
 
-        abas = Gtk.Notebook()
+        abas = self.abas = Gtk.Notebook()
         abas.set_vexpand(True)
         abas.append_page(self._aba_efeitos(), Gtk.Label(label="✨ Efeitos"))
         abas.append_page(self._aba_transparencia(), Gtk.Label(label="💧 Transparência"))
         abas.append_page(self._aba_mosaico(), Gtk.Label(label="🧩 Mosaico"))
         abas.append_page(self._aba_moldura(), Gtk.Label(label="🪟 Moldura"))
         abas.append_page(self._aba_mac(), Gtk.Label(label="🍎 Visual Mac"))
+        self.pagina_teclado = abas.append_page(self._aba_teclado(),
+                                               Gtk.Label(label="⌨️ Teclado"))
         caixa.append(abas)
 
         # --- Status ---
@@ -1137,6 +1254,51 @@ class JanelaTweaks(Gtk.ApplicationWindow):
             self.sw_mac.set_sensitive(False)
         return g
 
+    def _aba_teclado(self):
+        g = self._grade()
+        # valores do arquivo que não estão nas listas entram nelas (não se perdem)
+        atual = teclado_ler()
+        self.kb_layouts = list(TECLADO_LAYOUTS)
+        for cod in (atual["kb_layout1"], atual["kb_layout2"]):
+            if cod and cod not in [c for c, _ in self.kb_layouts]:
+                self.kb_layouts.append((cod, cod))
+        self.kb_layouts2 = [("", "— nenhum —")] + self.kb_layouts
+        self.kb_modelos = list(TECLADO_MODELOS)
+        if atual["kb_modelo"] not in [c for c, _ in self.kb_modelos]:
+            self.kb_modelos.append((atual["kb_modelo"], atual["kb_modelo"]))
+        self.kb_trocas = list(TECLADO_TROCAS)
+        if atual["kb_troca"] not in [c for c, _ in self.kb_trocas]:
+            self.kb_trocas.append((atual["kb_troca"], atual["kb_troca"]))
+
+        self.dd_kb1 = self._lista(g, "Layout principal", [t for _, t in self.kb_layouts],
+                                  "O ABNT2 é o teclado brasileiro com Ç.")
+        self.dd_kb2 = self._lista(g, "Segundo layout", [t for _, t in self.kb_layouts2])
+        self.dd_kb_modelo = self._lista(g, "Modelo", [t for _, t in self.kb_modelos],
+                                        "ABNT2 acerta as teclas a mais do teclado "
+                                        "brasileiro (/? e o ponto do teclado numérico).")
+        self.dd_kb_troca = self._lista(g, "Trocar de layout", [t for _, t in self.kb_trocas],
+                                       "Atalho para alternar entre os dois layouts.")
+        if not sessao_wayland():
+            for dd in (self.dd_kb1, self.dd_kb2, self.dd_kb_modelo, self.dd_kb_troca):
+                dd.set_sensitive(False)
+            aviso = Gtk.Label(xalign=0)
+            aviso.add_css_class("dica")
+            aviso.set_wrap(True)
+            aviso.set_markup("ℹ️ <b>Sessão X11.</b> Aqui o teclado é configurado pelo app "
+                             "<b>Teclado</b> do XFCE. Esta aba vale para o XFCE em Wayland.")
+            g.attach(aviso, 0, g._linha, 3, 1)
+            g._linha += 1
+            botao = Gtk.Button(label="⌨️ Abrir o Teclado do XFCE")
+            botao.set_halign(Gtk.Align.START)
+            botao.connect("clicked", lambda _b: rodar(["sh", "-c",
+                                                       "xfce4-keyboard-settings >/dev/null 2>&1 &"]))
+            g.attach(botao, 0, g._linha, 3, 1)
+            g._linha += 1
+        return g
+
+    def abrir_aba_teclado(self):
+        self.abas.set_current_page(self.pagina_teclado)
+
     # ----- carregar / aplicar -----
 
     def _valores_atuais(self):
@@ -1179,6 +1341,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         v["mac_aparencia"] = estado["aparencia"]
         v["mac_cor"] = estado["cor"]
         v["mac_layout"] = estado["layout"]
+        v.update(teclado_ler())
         return v
 
     def _mostrar(self, v):
@@ -1206,6 +1369,13 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         cores = [c for c, _ in CORES_MAC]
         self.dd_cor.set_selected(cores.index(v["mac_cor"]) if v["mac_cor"] in cores else 0)
         self.sw_layout_mac.set_active(v["mac_layout"])
+        for dd, lista, chave in ((self.dd_kb1, self.kb_layouts, "kb_layout1"),
+                                 (self.dd_kb2, self.kb_layouts2, "kb_layout2"),
+                                 (self.dd_kb_modelo, self.kb_modelos, "kb_modelo"),
+                                 (self.dd_kb_troca, self.kb_trocas, "kb_troca")):
+            codigos = [c for c, _ in lista]
+            if v[chave] in codigos:
+                dd.set_selected(codigos.index(v[chave]))
 
     def _coletar(self):
         return {
@@ -1228,6 +1398,10 @@ class JanelaTweaks(Gtk.ApplicationWindow):
             "mac_aparencia": APARENCIAS[self.dd_aparencia.get_selected()][0],
             "mac_cor": CORES_MAC[self.dd_cor.get_selected()][0],
             "mac_layout": self.sw_layout_mac.get_active(),
+            "kb_layout1": self.kb_layouts[self.dd_kb1.get_selected()][0],
+            "kb_layout2": self.kb_layouts2[self.dd_kb2.get_selected()][0],
+            "kb_modelo": self.kb_modelos[self.dd_kb_modelo.get_selected()][0],
+            "kb_troca": self.kb_trocas[self.dd_kb_troca.get_selected()][0],
         }
 
     def carregar_valores(self):
@@ -1286,6 +1460,12 @@ class JanelaTweaks(Gtk.ApplicationWindow):
                 labwc_gravar({"raio": int(v["raio"]), "sombras": "yes" if v["sombras"] else "no"})
             except (OSError, ET.ParseError) as e:
                 erros.append(f"labwc: {e}")
+
+        if wayland:
+            try:
+                teclado_gravar(v)
+            except OSError as e:
+                erros.append(f"teclado: {e}")
 
         try:
             for pid in ids_paineis():
@@ -1478,7 +1658,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         sobre.set_version(VERSAO)
         sobre.set_comments("Ajustes visuais do VoidBR XFCE:\n"
                            "picom, transparências, cortile, tema da moldura\n"
-                           "e Visual Mac (X11 e Wayland).")
+                           "Visual Mac (X11 e Wayland) e teclado (Wayland).")
         sobre.set_authors(["Vilmar Catafesta <vcatafesta@gmail.com>"])
         sobre.set_copyright("© 2026 Vilmar Catafesta")
         sobre.set_website("https://voidbr.org")
@@ -1492,9 +1672,21 @@ class AppTweaks(Gtk.Application):
     def __init__(self):
         super().__init__(application_id="org.voidbr.XfceTweaks",
                          flags=getattr(Gio.ApplicationFlags, "DEFAULT_FLAGS", Gio.ApplicationFlags.FLAGS_NONE))
+        self.abrir_teclado = False
+        # "app.teclado": usado pelo --teclado quando o app já está aberto
+        acao = Gio.SimpleAction.new("teclado", None)
+        acao.connect("activate", lambda *_: self._mostrar_teclado())
+        self.add_action(acao)
+
+    def _mostrar_teclado(self):
+        self.abrir_teclado = True
+        self.activate()
 
     def do_activate(self):
         janela = self.props.active_window or JanelaTweaks(self)
+        if self.abrir_teclado:
+            janela.abrir_aba_teclado()
+            self.abrir_teclado = False
         janela.present()
 
 
@@ -1504,4 +1696,12 @@ if __name__ == "__main__":
         # escape caso uma fonte deixe a janela ilegível
         gravar_prefs_app(font_family="", font_scale=1.0)
         print("voidbr-xfce-tweaks: fonte voltou ao padrão do sistema")
-    AppTweaks().run(None)
+    app = AppTweaks()
+    if "--teclado" in sys.argv[1:]:
+        # abre direto na aba Teclado (voidbr-teclado no Wayland)
+        app.register(None)
+        if app.get_is_remote():
+            app.activate_action("teclado", None)
+            sys.exit(0)
+        app.abrir_teclado = True
+    app.run(None)

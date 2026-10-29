@@ -1,0 +1,8 @@
+## VoidBR: teclado do XFCE em Wayland (labwc)
+## No Wayland o layout é do labwc, não do xfconf. Mude pelo voidbr-xfce-tweaks
+## (aba Teclado) ou aqui e rode: labwc --reconfigure
+## O arquivo "lock" ao lado impede o startxfce4 de reescrever este arquivo.
+## "br" já é o ABNT2; o modelo abnt2 acerta /? e o ponto do teclado numérico.
+XKB_DEFAULT_MODEL=abnt2
+XKB_DEFAULT_LAYOUT=br,us
+XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle

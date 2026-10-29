@@ -1,0 +1,19 @@
+[Desktop Entry]
+Version=1.0
+Name=Keyboard
+Name[pt_BR]=Teclado
+Comment=Edit keyboard settings and application shortcuts
+Comment[pt_BR]=Edite configurações de teclado e atalhos de aplicativos
+Keywords=numlock;keyboard;layout;shortcuts;
+Keywords[pt_BR]=numlock;teclado;layout;atalhos;abnt2;
+# VoidBR: substitui o item do xfce4-settings. O voidbr-teclado abre o app do
+# XFCE no X11 e a aba Teclado do voidbr-xfce-tweaks no Wayland (labwc).
+# Sem X-XfcePluggable: no Wayland não dá para embutir no Gerenciador.
+Exec=voidbr-teclado
+Icon=org.xfce.settings.keyboard
+Terminal=false
+Type=Application
+Categories=XFCE;GTK;Settings;DesktopSettings;X-XFCE-SettingsDialog;X-XFCE-HardwareSettings;
+StartupNotify=true
+OnlyShowIn=XFCE;
+X-XfceHelpPage=keyboard
