@@ -7,10 +7,18 @@
 #   voidbr-tiling status  mostra o estado
 #   voidbr-tiling reset   esquece os layouts guardados por área de trabalho
 #                         (volta todas ao layout inicial do config.toml)
+#   voidbr-tiling start   usado pelo autostart: sobe o cortile só no X11
+#
+# O cortile só funciona no X11. No XFCE em Wayland (labwc) ele iria parar no
+# XWayland e só enxergaria apps X11, então aqui ele não sobe.
 #
 # Baseado no tiling-on/tiling-off do DESERT OS Linux.
 
 desktop="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/cortile.desktop"
+
+wayland() {
+	[[ "$XDG_SESSION_TYPE" == "wayland" || -n "$WAYLAND_DISPLAY" ]]
+}
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/cortile"
 
 # Com o mosaico ligado, o Thunar não reabre maximizado: o cortile trata uma janela
@@ -28,7 +36,8 @@ enable_autostart() {
 		sed -i 's/^Hidden=.*/Hidden=false/' "$desktop"
 		grep -q '^Hidden=' "$desktop" || echo 'Hidden=false' >>"$desktop"
 	elif [[ -f /etc/skel/.config/autostart/cortile.desktop ]]; then
-		sed 's/^Hidden=.*/Hidden=false/' /etc/skel/.config/autostart/cortile.desktop >"$desktop"
+		sed 's/^Hidden=.*/Hidden=false/; s/^Exec=cortile$/Exec=voidbr-tiling start/' \
+			/etc/skel/.config/autostart/cortile.desktop >"$desktop"
 	fi
 }
 
@@ -37,6 +46,10 @@ disable_autostart() {
 }
 
 tiling_on() {
+	if wayland; then
+		echo "tiling: o mosaico (cortile) só funciona no X11; nada feito nesta sessão Wayland" >&2
+		exit 1
+	fi
 	enable_autostart
 	thunar_geometria false
 	pgrep -x cortile >/dev/null || (cortile >/dev/null 2>&1 &)
@@ -67,6 +80,7 @@ case "${1:-toggle}" in
 	toggle) if pgrep -x cortile >/dev/null; then tiling_off; else tiling_on; fi ;;
 	status) pgrep -x cortile >/dev/null && echo "tiling: ligado" || echo "tiling: desligado" ;;
 	reset)  tiling_reset ;;
-	*)      echo "uso: ${0##*/} {on|off|toggle|status|reset}" >&2; exit 1 ;;
+	start)  wayland || pgrep -x cortile >/dev/null || exec cortile ;;
+	*)      echo "uso: ${0##*/} {on|off|toggle|status|reset|start}" >&2; exit 1 ;;
 esac
 exit 0

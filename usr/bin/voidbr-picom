@@ -13,6 +13,8 @@
 #   picom  sempre picom
 #   xfwm4  sempre o compositor do xfwm4
 #   nenhum sem compositor
+#
+# No Wayland (labwc) não faz nada: o compositor é o próprio labwc.
 
 config="${XDG_CONFIG_HOME:-$HOME/.config}/picom/picom.conf"
 modo_file="${XDG_CONFIG_HOME:-$HOME/.config}/voidbr/compositor"
@@ -20,6 +22,13 @@ log="${XDG_CACHE_HOME:-$HOME/.cache}/voidbr-picom.log"
 mkdir -p "${log%/*}"
 exec >"$log" 2>&1
 echo "voidbr-picom: $(date '+%d/%m/%Y %H:%M:%S')"
+
+# XFCE em Wayland: quem compõe é o labwc. picom e xfwm4 aqui iriam parar no
+# XWayland (molduras duplicadas), então não faz nada.
+if [[ "$XDG_SESSION_TYPE" == "wayland" || -n "$WAYLAND_DISPLAY" ]]; then
+	echo "-> sessão Wayland (labwc): sem picom e sem xfwm4"
+	exit 0
+fi
 
 modo=auto
 [[ -r $modo_file ]] && read -r modo <"$modo_file"

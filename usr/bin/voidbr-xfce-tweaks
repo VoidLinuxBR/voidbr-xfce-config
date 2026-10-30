@@ -31,6 +31,8 @@
 #     (Tokyonight-Dark) quando o anterior não existe, e o GTK do gsettings.
 #     --corrigir (no login, pelo voidbr-mac-sessao): acerta tema do labwc,
 #     gsettings e mac.json quebrados que a atualização não sobrescreve.
+#     color-scheme sempre acompanha o tema (claro/escuro). Fora do Mac o tema
+#     GTK passa a ser o Tokyonight-Dark-Theme e o cursor o Nordic-cursors.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -791,34 +793,104 @@ def _tema_escuro(nome):
     return any(p in nome for p in ("dark", "nokto", "night", "noir", "black"))
 
 
+MIGRACOES = os.path.join(CONFIG, "voidbr", "migracoes")   # migrações já feitas (uma por linha)
+GTK_TEMA_VOIDBR = "Tokyonight-Dark-Theme"                  # tema GTK fora do Visual Mac
+CURSOR_VOIDBR = "Nordic-cursors"
+
+
+def _migrado(nome):
+    return nome in ler_arquivo(MIGRACOES).split()
+
+
+def _marcar_migrado(nome):
+    gravar_arquivo(MIGRACOES, ler_arquivo(MIGRACOES) + nome + "\n")
+
+
+def _dirs_dados(sub):
+    dados = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return [os.path.join(dados, sub), os.path.expanduser(f"~/.{sub}"),
+            f"/usr/share/{sub}", f"/usr/local/share/{sub}"]
+
+
+def gtk_tema_existe(nome):
+    return bool(nome) and any(os.path.isdir(os.path.join(b, nome, "gtk-3.0"))
+                              for b in _dirs_dados("themes"))
+
+
+def cursor_existe(nome):
+    return bool(nome) and any(os.path.isdir(os.path.join(b, nome, "cursors"))
+                              for b in _dirs_dados("icons"))
+
+
+def esquema_do_tema(tema):
+    """color-scheme que combina com o tema GTK (lido por Firefox, GTK4 e libadwaita)."""
+    return "prefer-dark" if _tema_escuro(tema) else "default"
+
+
 def corrigir_sessao():
     """Acerta estados quebrados que a atualização (--only-new) não alcança.
 
-    Só troca o que está quebrado; nunca uma escolha válida do usuário.
+    Só troca o que está quebrado ou o que era padrão antigo do VoidBR (uma vez,
+    marcado em ~/.config/voidbr/migracoes); nunca uma escolha válida do usuário.
     Devolve a lista do que foi corrigido.
     """
     feitos = []
     estado = ler_estado_mac()
+    anterior = estado.get("anterior") or {}
+    mac_mudou = False
 
+    # 1) tema GTK fora do Mac: Adapta-Nokto (padrão antigo) -> Tokyonight-Dark-Theme
+    if not _migrado("tema-tokyo"):
+        if gtk_tema_existe(GTK_TEMA_VOIDBR):
+            if estado.get("ativo"):
+                if anterior.get("gtk") == "Adapta-Nokto":
+                    anterior["gtk"] = anterior["gtk_gsettings"] = GTK_TEMA_VOIDBR
+                    anterior["esquema"] = "prefer-dark"
+                    mac_mudou = True
+                    feitos.append(f"mac.json: tema anterior -> {GTK_TEMA_VOIDBR}")
+            elif xfconf_ler("xsettings", "/Net/ThemeName") == "Adapta-Nokto":
+                xfconf_gravar("xsettings", "/Net/ThemeName", "string", GTK_TEMA_VOIDBR)
+                feitos.append(f"xsettings: tema Adapta-Nokto -> {GTK_TEMA_VOIDBR}")
+            _marcar_migrado("tema-tokyo")
+
+    # 2) cursor: Bibata (padrão antigo, não instalado) -> Nordic-cursors
+    if not _migrado("cursor-nordic"):
+        indice = os.path.expanduser("~/.icons/default/index.theme")
+        texto = ler_arquivo(indice)
+        if cursor_existe(CURSOR_VOIDBR):
+            if "Inherits=Bibata-Modern-Classic" in texto and not cursor_existe("Bibata-Modern-Classic"):
+                gravar_arquivo(indice, texto.replace("Inherits=Bibata-Modern-Classic",
+                                                     f"Inherits={CURSOR_VOIDBR}"))
+                feitos.append(f"cursor: Bibata-Modern-Classic -> {CURSOR_VOIDBR}")
+            _marcar_migrado("cursor-nordic")
+
+    # 3) autostart do cortile: passa pelo voidbr-tiling, que não sobe no Wayland
+    cortile = os.path.join(CONFIG, "autostart", "cortile.desktop")
+    texto = ler_arquivo(cortile)
+    if re.search(r"^Exec\s*=\s*cortile\s*$", texto, re.M):
+        gravar_arquivo(cortile, re.sub(r"^Exec\s*=\s*cortile\s*$", "Exec=voidbr-tiling start",
+                                       texto, flags=re.M))
+        feitos.append("cortile: autostart pelo voidbr-tiling start")
+
+    # 4) Visual Mac ligado: o "anterior" é o que volta ao desligar
     if estado.get("ativo"):
-        # o "anterior" é o que volta ao desligar o Visual Mac
-        anterior = estado.get("anterior") or {}
-        mudou = False
         labwc = anterior.get("labwc")
         if labwc and not labwc_tema_existe(labwc.get("nome")):
             labwc["nome"] = LABWC_TEMA_VOIDBR
-            mudou = True
+            mac_mudou = True
         if not anterior.get("gtk_gsettings") and anterior.get("gtk"):
             anterior["gtk_gsettings"] = anterior["gtk"]
-            if not anterior.get("esquema") and _tema_escuro(anterior["gtk"]):
-                anterior["esquema"] = "prefer-dark"
-            mudou = True
-        if mudou:
+            mac_mudou = True
+        if not anterior.get("esquema") and anterior.get("gtk"):
+            anterior["esquema"] = esquema_do_tema(anterior["gtk"])
+            mac_mudou = True
+        if mac_mudou:
+            estado["anterior"] = anterior
             gravar_estado_mac(estado)
             feitos.append("mac.json: visual anterior")
-        return feitos
 
-    if sessao_wayland() and os.path.isfile(LABWC_RC):
+    # 5) fora do Mac, no Wayland: tema do labwc que não existe (cai no claro embutido)
+    elif sessao_wayland() and os.path.isfile(LABWC_RC):
         try:
             nome = labwc_ler().get("nome")
             if not labwc_tema_existe(nome) and labwc_tema_existe(LABWC_TEMA_VOIDBR):
@@ -827,14 +899,18 @@ def corrigir_sessao():
         except (OSError, ET.ParseError):
             pass
 
-    gtk_gs = gsettings_ler("gtk-theme")
-    if gtk_gs and gtk_gs.startswith("VoidBR-Mac"):
-        gtk = xfconf_ler("xsettings", "/Net/ThemeName")
-        if gtk and not gtk.startswith("VoidBR-Mac"):
-            gsettings_gravar("gtk-theme", gtk)
-            if _tema_escuro(gtk):
-                gsettings_gravar("color-scheme", "prefer-dark")
-            feitos.append(f"gsettings: tema {gtk_gs} -> {gtk}")
+    # 6) gsettings acompanha o tema do xfconf. O xfsettingsd copia o tema, mas
+    #    não o color-scheme, que é o que Firefox, GTK4 e libadwaita usam.
+    tema = xfconf_ler("xsettings", "/Net/ThemeName")
+    if tema:
+        if gsettings_ler("gtk-theme") not in (None, tema):
+            gsettings_gravar("gtk-theme", tema)
+            feitos.append(f"gsettings: gtk-theme -> {tema}")
+        esquema = esquema_do_tema(tema)
+        atual = gsettings_ler("color-scheme")
+        if atual is not None and atual != esquema:
+            gsettings_gravar("color-scheme", esquema)
+            feitos.append(f"gsettings: color-scheme {atual} -> {esquema}")
     return feitos
 
 
@@ -1065,7 +1141,8 @@ def mac_desligar(estado):
         xfconf_gravar("xfwm4", "/general/button_layout", "string", anterior["botoes"])
     # mac.json antigo podia ter o tema do gsettings vazio: usa o do xfconf
     gsettings_gravar("gtk-theme", anterior.get("gtk_gsettings") or anterior.get("gtk"))
-    gsettings_gravar("color-scheme", anterior.get("esquema"))
+    gsettings_gravar("color-scheme", anterior.get("esquema")
+                     or esquema_do_tema(anterior.get("gtk")))
     gtk4_desligar()
     if anterior.get("labwc"):
         labwc = dict(anterior["labwc"])

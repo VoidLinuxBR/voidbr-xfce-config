@@ -5,10 +5,10 @@
   "layout": true,
   "layout_aplicado": true,
   "anterior": {
-    "gtk": "Adapta-Nokto",
+    "gtk": "Tokyonight-Dark-Theme",
     "xfwm4": "Tokyonight-Dark",
     "botoes": "OST|HMC",
-    "gtk_gsettings": "Adapta-Nokto",
+    "gtk_gsettings": "Tokyonight-Dark-Theme",
     "esquema": "prefer-dark",
     "labwc": {
       "nome": "Tokyonight-Dark",
