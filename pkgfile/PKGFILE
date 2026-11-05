@@ -44,7 +44,59 @@ pre_install() {
 }
 
 post_install() {
-  log "Finalizando instalação"
+  if [ "${update:-}" = "yes" ]; then
+    log "Finalizando upgrade"
+  else
+    log "Finalizando instalação"
+  fi
+
+  # Build da ISO e instalador: o skel vai para o usuário criado depois
+  if [ -n "${MKISO_BUILD:-}" ] || [ -n "${VOIDBR_INSTALLER:-}" ]; then
+    return 0
+  fi
+
+  # Cópia do skel (/etc/skel) para o usuário que está instalando/atualizando
+  [ -n "${user:-}" ] || return 0
+  if [ ! -x /usr/local/bin/voidbr-copy-skel-inc ]; then
+    log "voidbr-copy-skel-inc nao encontrado: skel nao copiado"
+    return 0
+  fi
+
+  local resp="t" prompt
+
+  # Instalação nova: copia tudo (o que for diferente vai para backup).
+  # Atualização: pergunta, se houver terminal. Sem terminal, ou sem
+  # resposta em 30s, não altera nada do que o usuário já tem.
+  if [ "${update:-}" = "yes" ]; then
+    resp=""
+    # O xbps roda este script com /bin/sh (dash), que não tem
+    # "read -t/-p"; a pergunta com tempo limite vai pelo bash,
+    # lendo direto do terminal. Prefixo no mesmo formato do log().
+    if [ -t 1 ] && { : </dev/tty; } 2>/dev/null; then
+      # Pergunta em branco, teclas em amarelo (destaca das linhas do log)
+      prompt=$(printf '%s[*]%s %s - %s' "$CYAN" "${BLACK}$pkgname" "${RST}" "${WHITE}")
+      prompt="${prompt}Configurações de $user: aplicar [${YELLOW}t${WHITE}]odas (com backup) ou só as [${YELLOW}N${WHITE}]ovas? ${RESET}"
+      resp=$(bash -c 'read -r -t 30 -p "$1" r </dev/tty >&2 || echo >&2; printf "%s" "$r"' _ "$prompt") || true
+    fi
+  fi
+
+  case "$resp" in
+    t | T | todas | Todas | TODAS)
+      # Substitui o que for diferente, com backup em ~/.voidbr-skel-backup-*
+      log "Aplicando configuracoes padrao para $user"
+      /usr/local/bin/voidbr-copy-skel-inc --user "$user" --force --quiet || true
+      ;;
+    *)
+      # Copia só o que ainda não existe no HOME
+      log "Aplicando novas configuracoes para $user"
+      /usr/local/bin/voidbr-copy-skel-inc --user "$user" --only-new --quiet || true
+      ;;
+  esac
+
+  # Atualização: lembra onde ficam os ajustes visuais
+  if [ "${update:-}" = "yes" ]; then
+    log "Efeitos, transparência, mosaico e moldura: voidbr-xfce-tweaks"
+  fi
 }
 
 pre_upgrade() {
@@ -52,5 +104,5 @@ pre_upgrade() {
 }
 
 post_upgrade() {
-  log "Finalizando upgrade"
+  post_install
 }
