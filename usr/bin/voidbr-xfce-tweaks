@@ -3,7 +3,7 @@
 #
 #   voidbr-xfce-tweaks
 #   Created: sáb 24 out 2026 12:40:00 -04
-#   Altered: seg 23 nov 2026 02:22:24 -04
+#   Altered: seg 23 nov 2026 02:29:10 -04
 #
 #   Copyright (c) 2026, Vilmar Catafesta <vcatafesta@gmail.com>
 #   Copyright (c) 2026, ChiliLinux Development Team <https://chililinux.com> <https://github.com/chililinux>
@@ -40,6 +40,11 @@
 #     no topo (o erro era engolido em silêncio). Agora a tela de login vai no
 #     mesmo ✅ Aplicar do app (sem botão próprio na aba) e um erro na aba aparece
 #     no terminal em vez de sumir com ela.
+#   - v1.6 (2026-11-23): Aba "🖥️ Tela": "Escala da interface" (80% a 200%, de 10 em
+#     10), como no voidbr-enlightenment-tweaks. X11: fator do GTK (1x/2x) no xsettings
+#     + escala RandR de cada tela no canal displays (/Schemes/Apply, como o próprio
+#     Xfce faz). Wayland: wlr-randr --scale, reaplicado no login pelo --corrigir.
+#     Só mexe na tela quando a escala muda (o Aplicar regrava o resto todo).
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -101,7 +106,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, GLib, Gio, Pango
 
-VERSAO = "1.5"
+VERSAO = "1.6"
 
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
@@ -205,7 +210,10 @@ TECLADO_TROCAS = [
 ]
 
 # Valores do skel do VoidBR (botão "Padrão VoidBR")
+TELA_MIN, TELA_MAX = 80, 200  # "Escala da interface", em %
+
 PADRAO = {
+    "escala": 100,
     "modo": "auto",
     "raio": 12,
     "blur": 10,
@@ -835,6 +843,103 @@ def esquema_do_tema(tema):
     return "prefer-dark" if _tema_escuro(tema) else "default"
 
 
+# ----- escala da interface -----
+
+def _x11_saidas():
+    """Telas ligadas que o Xfce conhece (canal displays, perfil Default)."""
+    saida = _xfconf(["-c", "displays", "-lv"]) or ""
+    return [m.group(1) for m in re.finditer(r"^/Default/([^/\s]+)/Active\s+true\s*$",
+                                            saida, re.M)]
+
+
+def _wlr_saidas():
+    """[(nome, escala)] dos monitores ligados, lidos do wlr-randr (Wayland)."""
+    try:
+        r = subprocess.run(["wlr-randr"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    saidas = []
+    for linha in r.stdout.splitlines():
+        if linha and not linha[0].isspace():
+            saidas.append([linha.split()[0], None, True])
+        elif saidas:
+            chave, _, valor = linha.strip().partition(":")
+            if chave == "Enabled":
+                saidas[-1][2] = valor.strip() == "yes"
+            elif chave == "Scale":
+                try:
+                    saidas[-1][1] = float(valor)
+                except ValueError:
+                    pass
+    return [(nome, escala) for nome, escala, ligado in saidas if ligado]
+
+
+def _wlr_aplicar(pct):
+    for nome, _escala in _wlr_saidas():
+        subprocess.run(["wlr-randr", "--output", nome, "--scale", f"{pct / 100:g}"],
+                       capture_output=True)
+
+
+def escala_x11(pct):
+    """No X11 o GTK só aumenta por inteiro (1x/2x); o resto é a tela inteira
+    reduzida pelo RandR, como no diálogo de telas do Xfce.
+    Ex.: 150% = GTK 2x e RandR 1,333 (2 ÷ 1,5); 90% = GTK 1x e RandR 1,111."""
+    if pct <= 100:
+        return 1, round(100 / pct, 6)
+    return 2, round(200 / pct, 6)
+
+
+def escala_ler():
+    if sessao_wayland():
+        try:
+            pct = int(ler_prefs_app().get("escala"))
+        except (TypeError, ValueError):
+            pct = next((round(e * 100) for _n, e in _wlr_saidas() if e), 100)
+    else:
+        try:
+            fator = int(xfconf_ler("xsettings", "/Gdk/WindowScalingFactor") or 1)
+        except ValueError:
+            fator = 1
+        randr = 1.0
+        saidas = _x11_saidas()
+        if saidas:
+            try:
+                randr = float(xfconf_ler("displays", f"/Default/{saidas[0]}/Scale/X") or 1)
+            except ValueError:
+                randr = 1.0
+        pct = round(fator / randr * 10) * 10 if randr else 100
+    return max(TELA_MIN, min(TELA_MAX, pct))
+
+
+def escala_gravar(pct):
+    if sessao_wayland():
+        gravar_prefs_app(escala=pct)  # o --corrigir reaplica no login
+        _wlr_aplicar(pct)
+        return
+    fator, randr = escala_x11(pct)
+    xfconf_gravar("xsettings", "/Gdk/WindowScalingFactor", "int", fator)
+    for nome in _x11_saidas():
+        for eixo in ("X", "Y"):
+            xfconf_gravar("displays", f"/Default/{nome}/Scale/{eixo}", "double", f"{randr:.6f}")
+    # o xfsettingsd só reaplica as telas quando o /Schemes/Apply muda
+    _xfconf(["-c", "displays", "-p", "/Schemes/Apply", "-r"])
+    xfconf_gravar("displays", "/Schemes/Apply", "string", "Default")
+
+
+def escala_no_login():
+    """Wayland: o labwc do XFCE não guarda a escala; reaplica a do app."""
+    if not sessao_wayland():
+        return None
+    try:
+        pct = int(ler_prefs_app().get("escala"))
+    except (TypeError, ValueError):
+        return None
+    if pct != 100:
+        _wlr_aplicar(pct)
+        return f"escala da interface: {pct}%"
+    return None
+
+
 def corrigir_sessao():
     """Acerta estados quebrados que a atualização (--only-new) não alcança.
 
@@ -1242,7 +1347,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         titulo = Gtk.Label(label="🎨 VoidBR XFCE Tweaks", xalign=0)
         titulo.add_css_class("titulo-app")
         caixa.append(titulo)
-        sub = Gtk.Label(label="Efeitos, transparências, mosaico, moldura, Visual Mac e teclado",
+        sub = Gtk.Label(label="Efeitos, transparências, mosaico, moldura, escala, Visual Mac e teclado",
                         xalign=0)
         sub.add_css_class("subtitulo")
         caixa.append(sub)
@@ -1253,6 +1358,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         abas.append_page(self._aba_transparencia(), Gtk.Label(label="💧 Transparência"))
         abas.append_page(self._aba_mosaico(), Gtk.Label(label="🧩 Mosaico"))
         abas.append_page(self._aba_moldura(), Gtk.Label(label="🪟 Moldura"))
+        abas.append_page(self._aba_tela(), Gtk.Label(label="🖥️ Tela"))
         abas.append_page(self._aba_mac(), Gtk.Label(label="🍎 Visual Mac"))
         self.pagina_teclado = abas.append_page(self._aba_teclado(),
                                                Gtk.Label(label="⌨️ Teclado"))
@@ -1410,6 +1516,15 @@ class JanelaTweaks(Gtk.ApplicationWindow):
                                    "Com o Visual Mac ligado, a moldura é a dele.")
         return g
 
+    def _aba_tela(self):
+        g = self._grade()
+        self.esc_escala = self._escala(g, "Escala da interface", TELA_MIN, TELA_MAX, 10, " %",
+                                       "Aumenta tudo na tela: janelas, painel, textos e ícones "
+                                       "(útil em telas de alta resolução). Vale para todas as "
+                                       "telas. No X11, fora de 100 % e 200 % a imagem pode "
+                                       "ficar um pouco borrada.")
+        return g
+
     def _aba_mac(self):
         g = self._grade()
         self.sw_mac = self._chave(g, "Visual Mac",
@@ -1523,6 +1638,8 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         v["mac_cor"] = estado["cor"]
         v["mac_layout"] = estado["layout"]
         v.update(teclado_ler())
+        v["escala"] = escala_ler()
+        self.escala_antes = v["escala"]  # o Aplicar só mexe na tela se ela mudar
         return v
 
     def _mostrar(self, v):
@@ -1537,6 +1654,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         self.esc_menus.set_value(v["menus"])
         self.esc_whisker.set_value(v["whisker"])
         self.esc_terminal.set_value(v["terminal"])
+        self.esc_escala.set_value(v["escala"])
         self.sw_tiling.set_active(v["tiling"])
         chaves = [chave for chave, _ in LAYOUTS]
         self.dd_layout.set_selected(chaves.index(v["layout"]) if v["layout"] in chaves else 0)
@@ -1571,6 +1689,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
             "menus": int(self.esc_menus.get_value()),
             "whisker": int(self.esc_whisker.get_value()),
             "terminal": int(self.esc_terminal.get_value()),
+            "escala": int(round(self.esc_escala.get_value() / 10) * 10),
             "tiling": self.sw_tiling.get_active(),
             "layout": LAYOUTS[self.dd_layout.get_selected()][0],
             "espaco": int(self.esc_espaco.get_value()),
@@ -1656,6 +1775,12 @@ class JanelaTweaks(Gtk.ApplicationWindow):
                 teclado_gravar(v)
             except OSError as e:
                 erros.append(f"teclado: {e}")
+
+        if v["escala"] != getattr(self, "escala_antes", None):
+            try:
+                escala_gravar(v["escala"])
+            except OSError as e:
+                erros.append(f"escala: {e}")
 
         try:
             for pid in ids_paineis():
@@ -1891,8 +2016,9 @@ if __name__ == "__main__":
         print("voidbr-xfce-tweaks: fonte voltou ao padrão do sistema")
     if "--corrigir" in sys.argv[1:]:
         # sem janela: correções de login (voidbr-mac-sessao)
-        for feito in corrigir_sessao():
-            print(f"voidbr-xfce-tweaks: {feito}")
+        for feito in corrigir_sessao() + [escala_no_login()]:
+            if feito:
+                print(f"voidbr-xfce-tweaks: {feito}")
         sys.exit(0)
     app = AppTweaks()
     if "--teclado" in sys.argv[1:]:
