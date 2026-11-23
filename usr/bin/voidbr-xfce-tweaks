@@ -3,7 +3,7 @@
 #
 #   voidbr-xfce-tweaks
 #   Created: sáb 24 out 2026 12:40:00 -04
-#   Altered: qui 29 out 2026 11:20:00 -04
+#   Altered: seg 23 nov 2026 01:25:31 -04
 #
 #   Copyright (c) 2026, Vilmar Catafesta <vcatafesta@gmail.com>
 #   Copyright (c) 2026, ChiliLinux Development Team <https://chililinux.com> <https://github.com/chililinux>
@@ -33,6 +33,9 @@
 #     gsettings e mac.json quebrados que a atualização não sobrescreve.
 #     color-scheme sempre acompanha o tema (claro/escuro). Fora do Mac o tema
 #     GTK passa a ser o Tokyonight-Dark-Theme e o cursor o Nordic-cursors.
+#   - v1.4 (2026-11-23): Aba "🔐 Tela de login": tema do SDDM com prévia, Testar
+#     e fundo próprio. Vem do voidbr-sddm-themes (/usr/lib/voidbr/voidbr_sddm_aba.py)
+#     e troca pelo pkexec voidbr-sddm-theme; sem o pacote, a aba não aparece.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -93,7 +96,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, GLib, Gio, Pango
 
-VERSAO = "1.3"
+VERSAO = "1.4"
 
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
@@ -1248,6 +1251,16 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         abas.append_page(self._aba_mac(), Gtk.Label(label="🍎 Visual Mac"))
         self.pagina_teclado = abas.append_page(self._aba_teclado(),
                                                Gtk.Label(label="⌨️ Teclado"))
+        # aba "Tela de login": vem do voidbr-sddm-themes (só aparece se ele estiver instalado)
+        try:
+            sys.path.insert(0, "/usr/lib/voidbr")
+            import voidbr_sddm_aba
+            rolagem = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+            rolagem.set_child(voidbr_sddm_aba.criar_aba(self))
+            self.abas.append_page(rolagem, Gtk.Label(label="🔐 Tela de login"))
+            self.abas.set_scrollable(True)
+        except Exception:  # noqa: BLE001 - sem o pacote (ou erro nele): segue sem a aba
+            pass
         caixa.append(abas)
 
         # --- Status ---
